@@ -10,6 +10,7 @@ import pickle
 
 import random
 from multiprocessing import Process
+from matplotlib import pyplot as plt
 
 # device = torch.device('cuda')
 torch.set_grad_enabled(True)
@@ -176,7 +177,7 @@ class MatMulMeasure(object):
                 info['data'] = []
             for evt in events:
                 if evt.device_type == DeviceType.CPU and evt.name == self.op_kw:
-                    duration = sum([k.duration for k in evt.kernels])
+                    duration = sum([k.duration for k in evt.kernels]) / 1e3
                     shape = evt.input_shapes
                     tmp_durations.append(duration)
             dur_avg = np.mean(tmp_durations)
@@ -205,7 +206,7 @@ class ConvMeasure(object):
     Measure forward and backward for conv2D
     """
     forward_name = "aten::cudnn_convolution"
-    backward_names = ["aten::cudnn_convolution_backward_input", "aten::cudnn_convolution_backward_weight"]
+    backward_names = ["aten::convolution_backward"]
 
     def __init__(self, batch_size_range, image_size_range, 
                  in_channels_range, out_channels_range, kernel_size_range, stride_range,
@@ -258,11 +259,9 @@ class ConvMeasure(object):
             for evt in events:
                 if evt.device_type == DeviceType.CPU:
                     duration = sum([k.duration for k in evt.kernels]) / 1e3
-                    # if evt.name.find('backward') >= 0:
-                        # print(evt.name)
+                    # print(evt.name, evt.kernels)
                     if evt.name in self.backward_names:
                         tmp_dur_backward.append(duration)
-                        # print(duration)    
                         backward_shape = evt.input_shapes
                     elif evt.name == self.forward_name:
                         tmp_dur_forward.append(duration)
@@ -282,7 +281,7 @@ class ConvMeasure(object):
                     try:
                         ret = measure_op(partial(self.get_inputs_generator(), dx), self.get_measured_func(), self.get_analyze_func(), device=self.device) 
                     except RuntimeError:
-                        print("oom")
+                        # print("oom")
                         success = False
                 pickle.dump(ret['data'], f)
                 f.flush()
@@ -371,7 +370,7 @@ class MaxPoolingMeasure(object):
     backward_name = "aten::max_pool2d_with_indices_backward"
 
     def __init__(self, batch_size_range, image_size_range, channels_range,
-                 kernel_size_range, stride_range):
+                 kernel_size_range, stride_range, device):
         self.batch_size_range = batch_size_range
         self.image_size_range = image_size_range
         self.channels_range = channels_range
@@ -380,6 +379,7 @@ class MaxPoolingMeasure(object):
 
         self.record_forward = []
         self.record_backward = []
+        self.device = device
 
     def get_inputs_generator(self): 
         batch_size = random.randint(*self.batch_size_range)
@@ -389,7 +389,7 @@ class MaxPoolingMeasure(object):
         stride = random.randint(*self.stride_range)
         self.params = (batch_size, kernel_size, image_size, channels, stride)
         def func():
-            A = torch.rand((batch_size, channels, image_size, image_size), device=device, requires_grad=True)
+            A = torch.rand((batch_size, channels, image_size, image_size), device=self.device, requires_grad=True)
             layer = torch.nn.MaxPool2d(kernel_size, stride=stride)
             return A, layer
         return func
@@ -401,7 +401,7 @@ class MaxPoolingMeasure(object):
             out = layer(A)
             out = out.sum()
             out.backward()
-            torch.cuda.synchronize()
+            torch.cuda.synchronize(self.device)
         return func
 
     def get_analyze_func(self):
@@ -409,13 +409,11 @@ class MaxPoolingMeasure(object):
             events = prof.profiler.function_events
             tmp_dur_forward = []
             tmp_dur_backward = []
-            if not 'data_backward' in info.keys():
-                info['data_backward'] = []
-            if not 'data_forward' in info.keys():
-                info['data_forward'] = []
+            if not 'data' in info.keys():
+                info['data'] = []
             for evt in events:
                 if evt.device_type == DeviceType.CPU:
-                    duration = sum([k.duration for k in evt.kernels])
+                    duration = sum([k.duration for k in evt.kernels]) / 1e3
                     if evt.name == self.forward_name:
                         forward_shape = evt.input_shapes
                         tmp_dur_forward.append(duration)
@@ -423,24 +421,24 @@ class MaxPoolingMeasure(object):
                         backward_shape = evt.input_shapes
                         tmp_dur_backward.append(duration)
             dur_avg_forward = np.mean(tmp_dur_forward)
-            dur_avg_backward = np.mean(tmp_dur_backward)
-            info['data_forward'].append((dur_avg_forward,) + self.params)           
-            info['data_backward'].append((dur_avg_backward,) + self.params)           
+            dur_avg_backward = np.mean(tmp_dur_backward)          
+            info['data'].append((dur_avg_forward, dur_avg_backward) + self.params)      
         return func 
 
-    def run(self, step=1):
-        for _ in tqdm(range(step)):
-            success = False
-            while not success:
-                success = True
-                try:
-                    ret = measure_op(partial(self.get_inputs_generator()), self.get_measured_func(), self.get_analyze_func()) 
-                except RuntimeError:
-                    print("oom")
-                    success = False
-            self.record_forward.extend(ret['data_forward'])
-            self.record_backward.extend(ret['data_backward'])
-    
+    def run(self, step=1, filename='maxpool_data'):
+        with open(filename, 'ab+') as f:
+            for _ in tqdm(range(step)):
+                success = False
+                while not success:
+                    success = True
+                    try:
+                        ret = measure_op(partial(self.get_inputs_generator()), self.get_measured_func(), self.get_analyze_func(), device=self.device) 
+                    except RuntimeError:
+                        # print("oom")
+                        success = False
+                pickle.dump(ret['data'], f)
+                f.flush()    
+
     def numpy(self):
         return np.array(self.record_forward), np.array(self.record_backward)
 
@@ -516,29 +514,27 @@ def mp_measure_conv(gpu_id):
     print("measuring conv")
     conv_measure.run(100_000, dx=True, filename=f'conv_data_{gpu_id}.data')
 
-def mp_measure_conv(gpu_id):
-    conv_measure = ConvMeasure(
-        batch_size_range=(1, 64),
-        image_size_range=(2, 224),
-        in_channels_range=(3, 1024),
-        out_channels_range=(16, 1024),
-        kernel_size_range=(1, 7),
-        stride_range=(1, 7),
-        padding_range=(1, 3),
-        device=torch.device(f'cuda:{gpu_id}')
-    )
-    print("measuring conv")
-    conv_measure.run(100_000, dx=True, filename=f'conv_data_{gpu_id}.data')
-
 def mp_measure_matmul(gpu_id):
     matmul_measure = MatMulMeasure(
         n_range=(1, 1024),
-        m_range=(1, 16384),
-        k_range=(1, 16384),
+        m_range=(1, 32768),
+        k_range=(1, 32768),
         device=torch.device(f'cuda:{gpu_id}')
     )
     print("measuring matmul")
     matmul_measure.run(10_000, filename=f'matmul_data_{gpu_id}.data')
+
+def mp_measure_maxpool(gpu_id):
+    pool_measure = MaxPoolingMeasure(
+        batch_size_range=(1, 64),
+        image_size_range=(2, 256),
+        channels_range=(1, 1024),
+        kernel_size_range=(1, 7),
+        stride_range=(1, 7),
+        device=torch.device(f'cuda:{gpu_id}')
+    ) 
+    print("measuring maxpool")
+    pool_measure.run(10_000, filename=f'maxpool_data_{gpu_id}.data')
 
 def mp_measure(func, num_gpus=4):
     processes = [Process(target=func, args=(gpu_id, )) for gpu_id in range(num_gpus)]
@@ -547,5 +543,5 @@ def mp_measure(func, num_gpus=4):
     for p in processes:
         p.join()
 
-mp_measure(mp_measure_matmul)
+mp_measure(mp_measure_conv)
 
