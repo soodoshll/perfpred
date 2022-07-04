@@ -48,16 +48,17 @@ def build_vgg_model(bias):
     return nn.Sequential(*layers)
 
 verbose = 0
-
+modulo = True
+model_name = "predictor_model_conv2d.th" if modulo else "predictor_model_conv2d_0.th"
 
 # linear_pred = LinearPredictor()
 # linear_pred.load_model("predictor_model_linear.th")
 # # linear_pred.test_auto()
 # linear_pred.model.to(torch.device('cpu'))
 
-conv_pred = Conv2DPredictor()
+conv_pred = Conv2DPredictor(modulo)
 # conv_pred.load_data(CONV2D_PATH)
-conv_pred.load_model("predictor_model_conv2d.th")
+conv_pred.load_model(model_name)
 conv_pred.model.to(torch.device('cpu'))
 # conv_pred.xgb_fit()
 
@@ -195,7 +196,8 @@ for target_batch_size in range(1, 65):
     image_size_list.append(image_size)
     run_time_list.append(fw_truth)    
     if verbose == 0:
-        print(f"{target_batch_size}, {target_batch_size / dur_truth : .3f}, {target_batch_size / dur_pred :.3f}")
+        # print(f"{target_batch_size}, {target_batch_size / dur_truth : .3f}, {target_batch_size / dur_pred :.3f}")
+        print(f"{target_batch_size}, {dur_truth : .3f}, {dur_pred :.3f}")
     elif verbose == 1:
     # print(target_batch_size, pred_tot, dur_tot, len(record) / 10, n)
         print(f"{target_batch_size}, {fw_truth : .2f}, {fw_pred : .2f}, {bw_truth : .2f}, {bw_pred :.2f}")

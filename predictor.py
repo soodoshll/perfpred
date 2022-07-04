@@ -101,7 +101,7 @@ class Predictor(object):
 
     def train(self, model_path, batch_size=512, num_epoch=30, hooks=[]):
         model = self.model
-        model.to(device)
+        model.to(self.device)
         model.train()
         dataloader = torch.utils.data.DataLoader(self.train_set, batch_size=batch_size, shuffle=True, num_workers=8)
         
@@ -255,11 +255,16 @@ def modpos(n, m, zero_base = True):
     return m if n == 0 else n
 
 class Conv2DPredictor(Predictor):
-    def __init__(self):
+    def __init__(self, modulo, device=torch.device('cpu')):
         self.feature_name = ['bias', 'batch', 'image_size', 'in_channels', 'out_channels', 'kernel_size',
         'stride', 'padding', 'is_forward']
-        self.model = make_mlp(device, len(self.feature_name) + 16 + 64 * 2 + 4)
+
         self.device = device
+        self.modulo = modulo
+        if modulo:
+            self.model = make_mlp(device, len(self.feature_name) + 16 + 64 * 2 + 4)
+        else:
+            self.model = make_mlp(device, len(self.feature_name))
 
         self.xgb_r = xgb.XGBRegressor(objective ='reg:squarederror',
                   n_estimators = 200, seed = 123)
@@ -283,14 +288,8 @@ class Conv2DPredictor(Predictor):
                             )
                     except (EOFError):
                         break
-        # rows = rows[int(len(rows) * 0.6) :]
         self.raw_dataset = torch.tensor(rows, dtype=torch.float32)
-        # self.raw_dataset = self.raw_dataset[self.raw_dataset[:, 1] <= 53]
-        print("max bs:", torch.max(self.raw_dataset[:, 1]))
-        # print(self.raw_dataset[0].shape)
-        # self.raw_dataset[:, -1] /= 1000
-        # print(torch.sum(self.raw_dataset[:, -1] == 0))
-        # print(self.raw_dataset[0])
+        # print("max bs:", torch.max(self.raw_dataset[:, 1]))
         print("datasize:", len(self.raw_dataset))
 
         self.dataset = self.raw_dataset 
@@ -304,29 +303,21 @@ class Conv2DPredictor(Predictor):
         self.avgs[0]= 0
         self.stds[0] = 1
 
-        # self.avgs[2] = 0
-        # self.stds[2] = 1
-
-        # self.avgs[6:9] = 0
-        # self.stds[6:9] = 1
-        
         self.avgs[-2] = 0
         self.stds[-2] = 1
         ####
 
-        # self.dataset = (self.raw_dataset - self.avgs) / self.stds
         print("avg:", self.avgs)
         print("std:", self.stds)  
 
         train_set_size = int(self.dataset.shape[0] * 0.8)
         test_set_size = self.dataset.shape[0] - train_set_size
-        # self.dataset_cuda = self.dataset.to(self.device)
 
-    # def 
         self.train_set, self.test_set = torch.utils.data.random_split(self.dataset, [train_set_size, test_set_size]) 
-        # self.train_set_cuda = self.train_set.to(self.device)
 
     def preprocess(self, data):
+        if not self.modulo:
+            return (data - self.avgs[:-1]) / self.stds[:-1]
         if len(data.shape) == 2:
             batchsize = data[:, 1].type(torch.int64)
             in_channels = data[:, 3].type(torch.int64)
@@ -337,21 +328,18 @@ class Conv2DPredictor(Predictor):
             in_channels = data[3].type(torch.int64)
             out_channels = data[4].type(torch.int64)        
             image_size = data[2].type(torch.int64)
-        batchsize_mod = (batchsize ) % 16
+
+        batchsize_mod = batchsize % 16
+        batchsize_mod = nn.functional.one_hot(batchsize_mod, 16)
+
         in_channels_mod = (in_channels) % 64
         out_channels_mod = (out_channels) % 64
         image_size_mod = image_size % 4
-        # batchsize_mod[batchsize_mod == 0] = 16
-        # in_channels_mod[in_channels_mod == 0] = 64
-        # out_channels_mod[out_channels_mod == 0] = 64
 
-        # batchsize_div = batchsize / 16
-        data = (data - self.avgs[:-1]) / self.stds[:-1]
-        # turn into one-hot
-        batchsize_mod = nn.functional.one_hot(batchsize_mod, 16)
         in_channels_mod = nn.functional.one_hot(in_channels_mod, 64)
         out_channels_mod = nn.functional.one_hot(out_channels_mod, 64)
         image_size_mod = nn.functional.one_hot(image_size_mod, 4)
+        data = (data - self.avgs[:-1]) / self.stds[:-1]
         inputs = torch.concat((data, 
             batchsize_mod.type(torch.float32),
             in_channels_mod.type(torch.float32),
@@ -439,26 +427,27 @@ class MaxPoolingPredictor(Predictor):
         self.train_set, self.test_set = torch.utils.data.random_split(self.dataset, [train_set_size, test_set_size]) 
 
 def train():
-    linear_pred = LinearPredictor()
-    linear_pred.load_data(LINEAR_PATH)
-    linear_pred.train('predictor_model_linear.th', 
-                    batch_size=512,
-                    num_epoch=40, 
-                    hooks=[lambda : print("error on test set:", linear_pred.test_set_error())])
+    # linear_pred = LinearPredictor()
+    # linear_pred.load_data(LINEAR_PATH)
+    # linear_pred.train('predictor_model_linear.th', 
+    #                 batch_size=512,
+    #                 num_epoch=40, 
+    #                 hooks=[lambda : print("error on test set:", linear_pred.test_set_error())])
+    # return
+    modulo = False
+    conv_pred = Conv2DPredictor(modulo, device=device)
+    # conv_pred.load_data_mix(sql_filenames=CONV2D_PATH_SQL, py_filenames=CONV2D_PATH)
+    conv_pred.load_data(filenames=CONV2D_PATH)
     return
-
-    # conv_pred = Conv2DPredictor()
-    # # conv_pred.load_data_mix(sql_filenames=CONV2D_PATH_SQL, py_filenames=CONV2D_PATH)
-    # conv_pred.load_data(filenames=CONV2D_PATH)
     # plt.hist(conv_pred.raw_dataset[:,-1].numpy())
     # plt.savefig("conv_data.png") 
-    # for data in conv_pred.raw_dataset.numpy():
-    #     if data[-1] > 2000:
-    #         print(data)
-    # conv_pred.train("predictor_model_conv2d.th",
-    #                 batch_size=512,
-    #                 num_epoch=300, 
-    #                 hooks=[lambda : print("error on test set:", conv_pred.test_set_error())])
+    
+    model_name = "predictor_model_conv2d.th" if modulo else "predictor_model_conv2d_0.th"
+
+    conv_pred.train(model_name,
+                    batch_size=512,
+                    num_epoch=300, 
+                    hooks=[lambda : print("error on test set:", conv_pred.test_set_error())])
     # error = conv_pred.test_set_error(filename="conv_error.png")
 
     # error = conv_pred.train_set_error()
