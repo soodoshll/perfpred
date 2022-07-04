@@ -1,6 +1,6 @@
 import sqlite3
-from timeit import default_timer
-from unittest import defaultTestLoader
+# from timeit import default_timer
+# from unittest import defaultTestLoader
 import torch
 from torch import nn
 from tqdm import trange, tqdm
@@ -8,8 +8,8 @@ import random
 import time
 import numpy as np
 from functools import partial
-import xgboost as xgb
-from torchmetrics import MeanAbsolutePercentageError
+# import xgboost as xgb
+# from torchmetrics import MeanAbsolutePercentageError
 import glob, pickle
 import argparse
 from matplotlib import pyplot as plt
@@ -266,8 +266,8 @@ class Conv2DPredictor(Predictor):
         else:
             self.model = make_mlp(device, len(self.feature_name))
 
-        self.xgb_r = xgb.XGBRegressor(objective ='reg:squarederror',
-                  n_estimators = 200, seed = 123)
+        # self.xgb_r = xgb.XGBRegressor(objective ='reg:squarederror',
+                #   n_estimators = 200, seed = 123)
 
 
     def load_data(self, filenames):
