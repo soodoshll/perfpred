@@ -32,7 +32,7 @@ def measure_mul(n, m, k, dry_run=5, nitr=20):
     dur = start_event.elapsed_time(end_event)
     return dur
 
-# binary element-wise
+# binary element-wise>
 def measure_binary_elementwise(n, op=torch.add, dry_run=5, nitr=20):
     A = torch.rand((n, ), device=device, dtype=torch.float32)
     B = torch.rand((n, ), device=device, dtype=torch.float32)
@@ -498,7 +498,6 @@ def measure_data_collect(filename='data'):
     pool_measure.run(10_000)
     pool_fw, pool_bw = pool_measure.numpy()
     np.savez('pool_10000', pool_fw=pool_fw, pool_bw=pool_bw)
-
 
 def mp_measure_conv(gpu_id):
     conv_measure = ConvMeasure(
