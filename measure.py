@@ -9,6 +9,7 @@ from tqdm import tqdm, trange
 import pickle
 
 import random
+import time
 from multiprocessing import Process
 from matplotlib import pyplot as plt
 
@@ -33,7 +34,7 @@ def measure_mul(n, m, k, dry_run=5, nitr=20):
     return dur
 
 # binary element-wise>
-def measure_binary_elementwise(n, op=torch.add, dry_run=5, nitr=20):
+def measure_binary_elementwise(n, device=torch.device('cuda'), op=torch.add, dry_run=10, nitr=20):
     A = torch.rand((n, ), device=device, dtype=torch.float32)
     B = torch.rand((n, ), device=device, dtype=torch.float32)
     start_event = torch.cuda.Event(enable_timing=True)
@@ -46,11 +47,11 @@ def measure_binary_elementwise(n, op=torch.add, dry_run=5, nitr=20):
         C = op(A, B)
     end_event.record()
     torch.cuda.synchronize()
-    dur = start_event.elapsed_time(end_event)
+    dur = start_event.elapsed_time(end_event) / nitr
     return dur
 
 # unary element_wise
-def measure_unary_elementwise(n, op=F.relu, dry_run=5, nitr=20):
+def measure_unary_elementwise(n, device=torch.device('cuda'), op=F.relu, dry_run=10, nitr=20):
     A = torch.rand((n, ), device=device, dtype=torch.float32)
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
@@ -62,11 +63,21 @@ def measure_unary_elementwise(n, op=F.relu, dry_run=5, nitr=20):
         C = op(A) 
     end_event.record()
     torch.cuda.synchronize()
-    dur = start_event.elapsed_time(end_event)
+    dur = start_event.elapsed_time(end_event) / nitr
+    return dur
+
+def measure_unary_elementwise_cpu(n, op=F.relu, dry_run=10, nitr=20):
+    A = torch.rand((n, ), dtype=torch.float32)
+    for _ in range(dry_run):
+        C = op(A) 
+    t0 = time.time()
+    for _ in range(nitr):
+        C = op(A) 
+    dur = (time.time() - t0) / nitr
     return dur
 
 # copy d2d
-def measure_d2d(n, dry_run=5, nitr=20):
+def measure_d2d(n, dry_run=10, nitr=20):
     A = torch.rand((n, ), device=device, dtype=torch.float32)
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
@@ -134,12 +145,19 @@ def measure_op(inputs_generator, measured_func, analyze_func, device, nitr=3):
         torch.cuda.synchronize(device)
     return info
 
+def get_children_kernel_time(event):
+    kernel_time = sum([kernel.duration for kernel in event.kernels])
+    for child in event.cpu_children:
+        kernel_time += get_children_kernel_time(child)
+    return kernel_time
+
 class MatMulMeasure(object):
     """
     Forward and backward are the same for matmul
     """
 
-    op_kw = "aten::mm"
+    forward_op_kw = "aten::matmul"
+    backward_op_kw = "MmBackward0"
 
     def __init__(self, n_range, m_range, k_range, device):
         self.n_range = n_range
@@ -155,8 +173,8 @@ class MatMulMeasure(object):
         k = random.randint(*self.k_range)
         self.params = (n, m, k)
         def fun():
-            A = torch.empty((n, m), device=self.device, dtype=torch.float32)
-            B = torch.empty((m, k), device=self.device, dtype=torch.float32)
+            A = torch.empty((n, m), device=self.device, dtype=torch.float32, requires_grad=True)
+            B = torch.empty((m, k), device=self.device, dtype=torch.float32, requires_grad=True)
             return A, B
         return fun
     
@@ -165,23 +183,29 @@ class MatMulMeasure(object):
             self.tmp_durations = []
             A = data[0]
             B = data[1]
-            C = A.matmul(B)
+            C = A.matmul(B).sum()
+            C.backward()
             torch.cuda.synchronize(self.device)
         return fun
 
     def get_analyze_func(self):
         def fun(info, prof):
             events = prof.profiler.function_events
-            tmp_durations = []
+            tmp_forward_durations = []
+            tmp_backward_durations = []
             if not 'data' in info.keys():
                 info['data'] = []
             for evt in events:
-                if evt.device_type == DeviceType.CPU and evt.name == self.op_kw:
-                    duration = sum([k.duration for k in evt.kernels]) / 1e3
-                    shape = evt.input_shapes
-                    tmp_durations.append(duration)
-            dur_avg = np.mean(tmp_durations)
-            info['data'].append((dur_avg, ) + self.params)
+                if evt.device_type == DeviceType.CPU and evt.name == self.forward_op_kw:
+                    duration = get_children_kernel_time(evt) / 1e3
+                    tmp_forward_durations.append(duration)
+                if evt.device_type == DeviceType.CPU and evt.name == self.backward_op_kw:
+                    duration = get_children_kernel_time(evt) / 1e3
+                    tmp_backward_durations.append(duration)
+            dur_avg_forward = np.mean(tmp_forward_durations)
+            dur_avg_backward = np.mean(tmp_backward_durations)
+            # print(dur_avg_forward, dur_avg_backward)
+            info['data'].append((dur_avg_forward, dur_avg_backward) + self.params)      
         return fun
     
     def run(self, step=1, filename='matmul_data'):
@@ -193,7 +217,7 @@ class MatMulMeasure(object):
                     try:
                         ret = measure_op(partial(self.get_inputs_generator()), self.get_measured_func(), self.get_analyze_func(), device=self.device) 
                     except RuntimeError:
-                        print("oom")
+                        # print("oom")
                         success = False
                 pickle.dump(ret['data'], f)
                 f.flush()
@@ -293,17 +317,17 @@ class BatchNormMeasure(object):
     """
     forward and backward of batchnorm2d
     """
-    forward_name = "aten::cudnn_batch_norm"
-    backward_name = "aten::cudnn_batch_norm_backward"
+    forward_name = "aten::batch_norm"
+    backward_name = "autograd::engine::evaluate_function: CudnnBatchNormBackward0"
 
-    def __init__(self, batch_size_range, image_size_range, channels_range):
+    def __init__(self, batch_size_range, image_size_range, channels_range, device):
         self.batch_size_range = batch_size_range
         self.image_size_range = image_size_range
         self.channels_range = channels_range
 
-        self.record_forward = []
-        self.record_dw = []
-        self.record_dwdx = []
+        self.record = []
+
+        self.device = device
 
     def get_measured_func(self):
         def func(data):
@@ -313,7 +337,7 @@ class BatchNormMeasure(object):
             out = layer(A)
             out = out.sum()
             out.backward()
-            torch.cuda.synchronize()
+            torch.cuda.synchronize(self.device)
         return func
 
     def get_inputs_generator(self): 
@@ -323,45 +347,48 @@ class BatchNormMeasure(object):
         self.params = (batch_size, image_size, channels)
         def func(dx=True):
             self.dx = dx
-            A = torch.rand((batch_size, channels, image_size, image_size), device=device, requires_grad=dx)
-            layer = torch.nn.BatchNorm2d(channels, device=device)
+            A = torch.rand((batch_size, channels, image_size, image_size), device=self.device, requires_grad=dx)
+            layer = torch.nn.BatchNorm2d(channels, device=self.device)
             return A, layer
         return func
-    
+
     def get_analyze_func(self):
         def func(info, prof):
             events = prof.profiler.function_events
             tmp_dur_forward = []
             tmp_dur_backward = []
-            if not 'data_backward' in info.keys():
-                info['data_backward'] = []
-            if not 'data_forward' in info.keys():
-                info['data_forward'] = []
+            if not 'data' in info.keys():
+                info['data'] = []
             for evt in events:
                 if evt.device_type == DeviceType.CPU:
-                    # print(evt.name)
-                    duration = sum([k.duration for k in evt.kernels])
-                    if evt.name == self.forward_name:
-                        forward_shape = evt.input_shapes
-                        tmp_dur_forward.append(duration)
                     if evt.name == self.backward_name:
-                        backward_shape = evt.input_shapes
+                        duration = get_children_kernel_time(evt) / 1e3
                         tmp_dur_backward.append(duration)
+                        backward_shape = evt.input_shapes
+                    elif evt.name == self.forward_name:
+                        duration = get_children_kernel_time(evt) / 1e3
+                        tmp_dur_forward.append(duration)
+                        forward_shape = evt.input_shapes
+            
             dur_avg_forward = np.mean(tmp_dur_forward)
             dur_avg_backward = np.mean(tmp_dur_backward)
-            info['data_forward'].append((dur_avg_forward,) + self.params)           
-            info['data_backward'].append((dur_avg_backward,) + self.params)           
+            info['data'].append((dur_avg_forward, dur_avg_backward) + self.params)      
         return func
 
-    def run(self, step=1, dx=True):
-        for _ in tqdm(range(step)):
-            ret = measure_op(partial(self.get_inputs_generator(), dx), self.get_measured_func(), self.get_analyze_func()) 
-            self.record_forward.extend(ret['data_forward'])
-            if self.dx:
-                self.record_dwdx.extend(ret['data_backward'])
-            else:
-                self.record_dw.extend(ret['data_backward'])
-
+    def run(self, step=1, dx=True, filename='batchnorm_data'):
+        with open(filename, 'ab+') as f:
+            for _ in tqdm(range(step)):
+                success = False
+                while not success:
+                    success = True
+                    try:
+                        ret = measure_op(self.get_inputs_generator(), self.get_measured_func(), self.get_analyze_func(), device=self.device) 
+                    except RuntimeError:
+                        # print("oom")
+                        success = False
+                pickle.dump(ret['data'], f)
+                f.flush()
+    
     def numpy(self):
         return np.array(self.record_forward), np.array(self.record_dw), np.array(self.record_dwdx)
 
@@ -523,6 +550,16 @@ def mp_measure_matmul(gpu_id):
     print("measuring matmul")
     matmul_measure.run(10_000, filename=f'matmul_data_{gpu_id}.data')
 
+def mp_measure_batchnorm(gpu_id):
+    batchnorm_measure = BatchNormMeasure(
+        batch_size_range=(1, 64),
+        image_size_range=(2, 224),
+        channels_range=(1, 1024),
+        device=torch.device(f'cuda:{gpu_id}')
+    )
+    print("measuring batchnorm")
+    batchnorm_measure.run(10_000, filename=f'batchnorm_data_{gpu_id}.data')
+
 def mp_measure_maxpool(gpu_id):
     pool_measure = MaxPoolingMeasure(
         batch_size_range=(1, 64),
@@ -542,5 +579,6 @@ def mp_measure(func, num_gpus=4):
     for p in processes:
         p.join()
 
-mp_measure(mp_measure_conv)
+if __name__ == '__main__':
+    mp_measure(mp_measure_batchnorm, num_gpus=4)
 
