@@ -201,7 +201,7 @@ class Tracer(object):
 
         # print(conv_time/1e3, linear_time/1e3, pool_time/1e3, acc_grad/1e3 + optim_dur/1e3)
         # return trace_with_dur, acc_grad, optim_dur, np.mean(step_time) / 1e3
-        return np.mean(step_time) / 1e3, np.mean(all_kernel_time)/1e3 , unmarked_event
+        return np.mean(step_time) / 1e3, np.mean(all_kernel_time)/1e3 , unmarked_event, trace_with_dur
         # return conv_time / 1e3
 
 model = build_vgg_model(bias=False)
@@ -211,23 +211,25 @@ loss_fn = nn.CrossEntropyLoss()
 optim = torch.optim.SGD(model.parameters(), lr=1e-3)
 
 conv_pred = Conv2DPredictor()
-conv_pred.load_model("predictor_model_conv2d.th")
+conv_pred.load_model("./model/predictor_model_conv2d.th")
 
 linear_pred = LinearPredictor()
-linear_pred.load_model("predictor_model_linear.th")
+linear_pred.load_model("./model/predictor_model_linear.th")
 
 maxpool_pred = MaxPoolingPredictor()
-maxpool_pred.load_model("predictor_model_maxpool.th")
+maxpool_pred.load_model("./model/predictor_model_maxpool.th")
 
 batchnorm_pred = BatchNormPredictor()
-batchnorm_pred.load_model("predictor_model_batchnorm.th")
+batchnorm_pred.load_model("./model/predictor_model_batchnorm.th")
 
 def predict_using_trace(model, trace):
     tot_time = 0
     conv_time = 0
     linear_time = 0
     pool_time = 0
+    dur_list = []
     for is_forward, module, input_shapes in trace:
+        pred = None
         if isinstance(module, nn.Conv2d):
             input_shape = input_shapes[0]
             if input_shape == None:
@@ -260,7 +262,10 @@ def predict_using_trace(model, trace):
         if isinstance(module, nn.ReLU):
             input_shape = input_shapes[0]
             input_size = np.prod(input_shape)
-            pred = 1.50332785e-08 * input_size
+            if is_forward:
+                pred = UNARY_COEFF * input_size
+            else:
+                pred = BINARY_COEFF * input_size
             tot_time += pred
         if isinstance(module, nn.BatchNorm2d):
             input_shape = input_shapes[0]
@@ -268,6 +273,7 @@ def predict_using_trace(model, trace):
                 [input_shape[0], input_shape[2], input_shape[1], is_forward]
             )
             tot_time += pred
+        dur_list.append(pred)
     
     # optimizer
     param_size = 0
@@ -277,7 +283,7 @@ def predict_using_trace(model, trace):
     tot_time += optim_time
 
     # print(conv_time, linear_time, pool_time, optim_time)
-    return tot_time
+    return tot_time, dur_list
     # return conv_time
 
 def trace_func():
@@ -289,19 +295,23 @@ def trace_func():
     torch.cuda.synchronize()
     del out
 
-for batch_size in range(37, 65):
-    tracer = Tracer()
-    inputs = torch.rand([batch_size, 3, 224, 224], device=device)
-    labels = torch.randint(1000 - 1, (batch_size, ), device=device)
-    trace = tracer.trace(trace_func)
-    # print(trace)
-    pred = predict_using_trace(model, trace)
+# for batch_size in range(32, 33):
+#     tracer = Tracer()
+#     inputs = torch.rand([batch_size, 3, 224, 224], device=device)
+#     labels = torch.randint(1000 - 1, (batch_size, ), device=device)
+#     trace = tracer.trace(trace_func)
+#     # print(trace)
+#     pred, pred_dur = predict_using_trace(model, trace)
 
-    events = profile_model(trace_func)
-    truth, truth_kernel_time, unmarked_events = tracer.match_trace_and_events(trace, events)
+#     events = profile_model(trace_func)
+#     truth, truth_kernel_time, unmarked_events, trace_with_dur = tracer.match_trace_and_events(trace, events)
 
-    for evt in unmarked_events:
-        pred += BINARY_COEFF * np.prod(evt.input_shapes[0])
+#     for evt in unmarked_events:
+#         pred += BINARY_COEFF * np.prod(evt.input_shapes[0])
 
-    print(f"{batch_size}, {pred}, {truth_kernel_time}, {truth}")
-    del inputs, labels, trace, events, tracer
+#     print(f"{batch_size}, {pred}, {truth_kernel_time}, {truth}")
+#     for t_item, pred_module_dur in zip(trace_with_dur, pred_dur):
+#         is_forward, module, _, dur = t_item
+#         if isinstance(module, nn.Conv2d):
+#             print(f'{is_forward}, {str(type(module))[25:-2]}, {pred_module_dur}, {dur/1e3}')
+#     del inputs, labels, trace, events, tracer
