@@ -4,11 +4,13 @@ from torch import nn
 from contextlib import suppress
 import os
 import argparse
+from apex import amp
 # from functorch import make_functional
 # from functorch.compile import aot_module, min_cut_rematerialization_partition, nop, memory_efficient_fusion
 
 parser = argparse.ArgumentParser()
 parser.add_argument('batch_size', type=int)
+parser.add_argument('--amp', type=int, default=0)
 args = parser.parse_args()
 
 use_fake_alloc = os.environ.get("LD_PRELOAD", None) == "./fake_libcudart.so"
@@ -43,9 +45,14 @@ x = torch.rand((bs, 3, image_size, image_size), device=device)
 model(x)
 if use_fake_alloc:
     fake_alloc.init_max_mem()
+else:
+    torch.cuda.reset_max_memory_allocated()
+    
 # t = torch.randint(1000, (bs, ), device=device)
 loss_fn = who_cares_loss
 optim = torch.optim.SGD(model.parameters(), lr=1e-3)
+
+model, optim = amp.initialize(model, optim, opt_level="O" + str(args.amp))
 
 optim.zero_grad()
 print("run forward")
@@ -53,7 +60,8 @@ out = model(x)
 # out = compiled_model(x)
 # loss = loss_fn(out, t)
 loss = torch.sum(out)
-loss.backward()
+with amp.scale_loss(loss, optim, delay_overflow_check=True) as scaled_loss:
+    loss.backward()
 optim.step()
 
 if use_fake_alloc:
