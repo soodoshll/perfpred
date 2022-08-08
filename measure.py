@@ -131,7 +131,7 @@ def measure_op(inputs_generator, measured_func, analyze_func, device, nitr=3):
     with torch.profiler.profile(
         schedule= torch.profiler.schedule(
             wait=1,
-            warmup=1,
+            warmup=3,
             active=nitr,
             repeat=1),
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
@@ -139,7 +139,7 @@ def measure_op(inputs_generator, measured_func, analyze_func, device, nitr=3):
         record_shapes=True,
         on_trace_ready=functools.partial(analyze_func, info)
     ) as profiler:
-        for _ in range(nitr + 3):
+        for _ in range(nitr + 5):
             measured_func(data)
             profiler.step()
         torch.cuda.synchronize(device)
@@ -210,7 +210,7 @@ class MatMulMeasure(object):
     
     def run(self, step=1, filename='matmul_data'):
         with open(filename, 'ab+') as f:
-            for _ in tqdm(range(step)):
+            for _ in range(step):
                 success = False
                 while not success:
                     success = True
@@ -298,7 +298,7 @@ class ConvMeasure(object):
 
     def run(self, step=1, dx=True, filename='conv_data'):
         with open(filename, 'ab+') as f:
-            for _ in tqdm(range(step)):
+            for _ in range(step):
                 success = False
                 while not success:
                     success = True
@@ -377,7 +377,7 @@ class BatchNormMeasure(object):
 
     def run(self, step=1, dx=True, filename='batchnorm_data'):
         with open(filename, 'ab+') as f:
-            for _ in tqdm(range(step)):
+            for _ in range(step):
                 success = False
                 while not success:
                     success = True
