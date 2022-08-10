@@ -17,7 +17,7 @@ cudaError_t cudaFree(void *devPtr) {
 }
 
 cudaError_t cudaMemGetInfo (size_t* free, size_t* total) {
-  printf("cudagetInfo called\n");
+  // printf("cudagetInfo called\n");
 // ​cudaError_t cudaMemGetInfo (size_t* free, size_t* total) {
   *free = BUFFER_SIZE;
   *total = BUFFER_SIZE;

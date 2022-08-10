@@ -44,7 +44,7 @@ cudaError_t cnmemStatus2cudaError(cnmemStatus_t status) {
 Allocator::Allocator() {
   cnmemDevice_t device;
   device.device = 0;
-  device.size = (size_t)9 * 1024 * 1024 * 1024;
+  device.size = (size_t)6 * 1024 * 1024 * 1024;
   // device.size = 0;
   device.numStreams = 0;
   device.streams = NULL;
@@ -71,9 +71,11 @@ cudaError_t Allocator::malloc(void **devPtr, size_t size) {
     return cudaSuccess;
   }
   auto aligned_size = ceilInt(size, GRANULARITY);
-  assert(size < BUFFER_SIZE / 2);
+  // assert(size < BUFFER_SIZE / 2);
   if (alloc_cur_ > alloc_max_)
     alloc_max_ = alloc_cur_;
+  // if (alloc_num_ + aligned_size > BUFFER_SIZE)
+    // alloc_num_ = BUFFER_SIZE - aligned_size - GRANULARITY;
   *devPtr = (DTYPE *)this->devPtr_ + alloc_num_ % (BUFFER_SIZE / 2);
   // printf("%.3f GB | alloc: %lu | alloc_num_: %lu | addr: %p\n", alloc_num_ / 1e9, size, alloc_num_, devPtr);
   // *devPtr = (DTYPE *)this->devPtr_ + alloc_num_;
