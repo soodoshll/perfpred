@@ -4,6 +4,7 @@ from torch import nn
 from contextlib import suppress
 import os
 import argparse
+import time
 from apex import amp
 # from functorch import make_functional
 # from functorch.compile import aot_module, min_cut_rematerialization_partition, nop, memory_efficient_fusion

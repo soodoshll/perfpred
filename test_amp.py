@@ -60,12 +60,12 @@ for i in range(10):
     out = model(x)
     loss = torch.sum(out)
     with amp.scale_loss(loss, optim, delay_overflow_check=True) as scaled_loss:
-        loss.backward()
+        scaled_loss.backward()
     optim.step()
     del loss, out
 
 torch.cuda.synchronize()
 if use_fake_alloc:
-    print('mem:', fake_alloc.max_mem_allocated())
+    print(fake_alloc.max_mem_allocated())
 else:
-    print('mem:', torch.cuda.max_memory_allocated())
+    print(torch.cuda.max_memory_allocated())
