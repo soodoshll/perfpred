@@ -6,6 +6,7 @@ import os
 import argparse
 import time
 from apex import amp
+import torchvision
 # from functorch import make_functional
 # from functorch.compile import aot_module, min_cut_rematerialization_partition, nop, memory_efficient_fusion
 
@@ -18,16 +19,17 @@ use_fake_alloc = os.environ.get("LD_PRELOAD", None) == "./fake_libcudart.so"
 print("Using fake allocator:", use_fake_alloc)
 if use_fake_alloc:
     import fake_alloc
-
+# 
 torch.backends.cudnn.benchmark = False
-torch.backends.cudnn.deterministic = True
+# torch.backends.cudnn.deterministic = True
 
 # print(torch.backends.cudnn.version())
 # torch.backends.cudnn.allow_tf32 = False
 # torch.use_deterministic_algorithms(True)
 # torch.backends.cudnn.enabled = False
 
-model = build_vgg_model()
+# model = build_vgg_model()
+model = torchvision.models.vgg16()
 device = torch.device('cuda')
 model.to(device)
 print("model created")
@@ -49,20 +51,21 @@ if use_fake_alloc:
 else:
     torch.cuda.reset_max_memory_allocated()
     
-# t = torch.randint(1000, (bs, ), device=device)
-loss_fn = who_cares_loss
+t = torch.randint(1000, (bs, ), device=device)
+# loss_fn = who_cares_loss
+loss_fn = torch.nn.CrossEntropyLoss()
 optim = torch.optim.SGD(model.parameters(), lr=1e-3)
 
-model, optim = amp.initialize(model, optim, opt_level="O" + str(args.amp))
+# model, optim = amp.initialize(model, optim, opt_level="O" + str(args.amp))
 
 optim.zero_grad()
 print("run forward")
 out = model(x)
 # out = compiled_model(x)
-# loss = loss_fn(out, t)
-loss = torch.sum(out)
-with amp.scale_loss(loss, optim, delay_overflow_check=True) as scaled_loss:
-    loss.backward()
+loss = loss_fn(out, t)
+# loss = torch.sum(out)
+# with amp.scale_loss(loss, optim, delay_overflow_check=True) as scaled_loss:
+loss.backward()
 optim.step()
 
 if use_fake_alloc:
