@@ -1,5 +1,3 @@
-
-from cgitb import reset
 from vgg import build_vgg_model
 import torch
 from torch import nn
@@ -8,6 +6,7 @@ import os
 import argparse
 from apex import amp
 import time
+import torchvision
 # from functorch import make_functional
 # from functorch.compile import aot_module, min_cut_rematerialization_partition, nop, memory_efficient_fusion
 
@@ -30,7 +29,8 @@ torch.backends.cudnn.deterministic = True
 # torch.use_deterministic_algorithms(True)
 # torch.backends.cudnn.enabled = False
 
-model = build_vgg_model()
+# model = build_vgg_model()
+model = torchvision.models.resnet18()
 device = torch.device('cuda')
 model.to(device)
 print("model created")
@@ -55,6 +55,8 @@ optim = torch.optim.SGD(model.parameters(), lr=1e-3)
 model, optim = amp.initialize(model, optim, opt_level="O" + str(args.amp))
 for i in range(10):
     if i == 8:
+        torch.cuda.synchronize()
+        t0 = time.time()
         reset_mem()
     optim.zero_grad()
     out = model(x)
@@ -65,6 +67,8 @@ for i in range(10):
     del loss, out
 
 torch.cuda.synchronize()
+dur = (time.time() - t0) / 2
+print(dur)
 if use_fake_alloc:
     print(fake_alloc.max_mem_allocated())
 else:

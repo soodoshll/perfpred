@@ -6,7 +6,7 @@
 // 
 // enum cudaError_t : int;
 
-constexpr size_t BUFFER_SIZE = (size_t)6 * 1024 * 1024 * 1024;
+constexpr size_t BUFFER_SIZE = (size_t)1 * 1024 * 1024 * 1024;
 namespace pytorch_malloc {
 
 class Allocator {

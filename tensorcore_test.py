@@ -1,4 +1,3 @@
-from distutils.command.build import build
 import torch
 from torch import nn 
 import time
@@ -24,14 +23,13 @@ image_size = 224
 warm_up = 5
 nitr = 10
 
-# model = torchvision.models.resnet18()
-model = build_vgg_model()
+model = torchvision.models.resnet18()
 model.to(device)
 x = torch.rand((batch_size, in_channels, image_size, image_size), device=device)
 model(x)
 optim = torch.optim.SGD(model.parameters(), lr=1e-3)
 
-model, optim = amp.initialize(model, optim, opt_level="O3")
+model, optim = amp.initialize(model, optim, opt_level="O0")
     
 for batch_size in range(1, 48 + 1, 1):
     x = torch.rand((batch_size, in_channels, image_size, image_size), device=device)

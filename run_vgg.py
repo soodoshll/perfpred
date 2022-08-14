@@ -20,7 +20,7 @@ print("Using fake allocator:", use_fake_alloc)
 if use_fake_alloc:
     import fake_alloc
 # 
-torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.benchmark = False
 # torch.backends.cudnn.deterministic = True
 
 # print(torch.backends.cudnn.version())
@@ -29,7 +29,7 @@ torch.backends.cudnn.benchmark = False
 # torch.backends.cudnn.enabled = False
 
 # model = build_vgg_model()
-model = torchvision.models.vgg16()
+model = torchvision.models.resnet50()
 device = torch.device('cuda')
 model.to(device)
 print("model created")

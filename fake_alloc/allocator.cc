@@ -44,7 +44,7 @@ cudaError_t cnmemStatus2cudaError(cnmemStatus_t status) {
 Allocator::Allocator() {
   cnmemDevice_t device;
   device.device = 0;
-  device.size = (size_t)6 * 1024 * 1024 * 1024;
+  device.size = (size_t)1 * 1024 * 1024 * 1024;
   // device.size = 0;
   device.numStreams = 0;
   device.streams = NULL;
