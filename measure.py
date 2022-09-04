@@ -124,7 +124,7 @@ def measure_unary2d(batch_size, image_size, num_channel, op=F.instance_norm ,dry
     dur = start_event.elapsed_time(end_event)
     return dur
 
-def measure_op(inputs_generator, measured_func, analyze_func, device, nitr=3):
+def measure_op(inputs_generator, measured_func, analyze_func, device, use_fp16=False, nitr=3):
     data = inputs_generator()
     info = {}
     torch.cuda.synchronize(device)
@@ -139,9 +139,15 @@ def measure_op(inputs_generator, measured_func, analyze_func, device, nitr=3):
         record_shapes=True,
         on_trace_ready=functools.partial(analyze_func, info)
     ) as profiler:
-        for _ in range(nitr + 5):
-            measured_func(data)
-            profiler.step()
+        if use_fp16:
+            with torch.autocast(device_type='cuda', dtype=torch.float32):
+                for _ in range(nitr + 5):
+                    measured_func(data)
+                    profiler.step()
+        else:
+            for _ in range(nitr + 5):
+                measured_func(data)
+                profiler.step()
         torch.cuda.synchronize(device)
     return info
 
@@ -150,6 +156,24 @@ def get_children_kernel_time(event):
     for child in event.cpu_children:
         kernel_time += get_children_kernel_time(child)
     return kernel_time
+
+def get_children_kernel_time2(event):
+    print(event)
+    def get_children_kernel_start_and_end(event, start_list, end_list):
+        for kernel in event.kernels:
+            start_list.append(kernel.time_range.start)
+            end_list.append(kernel.time_range.end)
+            # print(start_list, end_list)
+        for child in event.cpu_children:
+            get_children_kernel_start_and_end(child, start_list, end_list)
+    start_list, end_list = [], []
+    get_children_kernel_start_and_end(event, start_list, end_list)
+    # print(start_list, end_list)
+    if len(start_list) == 0 or len(end_list) == 0:
+        return 0
+    start = min(start_list)
+    end = max(end_list)
+    return end - start
 
 class MatMulMeasure(object):
     """
@@ -234,7 +258,7 @@ class ConvMeasure(object):
 
     def __init__(self, batch_size_range, image_size_range, 
                  in_channels_range, out_channels_range, kernel_size_range, stride_range,
-                 padding_range, device):
+                 padding_range, use_fp16=True, device=torch.device('cpu')):
         self.batch_size_range = batch_size_range
         self.image_size_range = image_size_range
         self.in_channels_range = in_channels_range
@@ -243,6 +267,7 @@ class ConvMeasure(object):
         self.stride_range = stride_range
         self.padding_range = padding_range
         self.record = []
+        self.use_fp16 = use_fp16
 
         self.device = device
         self.dx = None
@@ -258,7 +283,8 @@ class ConvMeasure(object):
         self.params = (batch_size, kernel_size, image_size, in_channels, out_channels, stride, padding)
         def func(dx=True):
             self.dx = dx
-            A = torch.rand((batch_size, in_channels, image_size, image_size), device=self.device, requires_grad=dx)
+            dtype = torch.float16 if self.use_fp16 else torch.float32
+            A = torch.rand((batch_size, in_channels, image_size, image_size), device=self.device, requires_grad=dx, dtype=dtype)
             layer = torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding=padding, device=self.device)
             return A, layer
         return func
@@ -267,9 +293,10 @@ class ConvMeasure(object):
         def func(data):
             A = data[0]
             layer = data[1]
-            out = layer(A)
-            out = out.sum()
-            out.backward()
+            with torch.autocast(device_type='cuda', dtype=torch.float32):
+                out = layer(A)
+                out = out.sum()
+            self.scaler.scale(out).backward()
             torch.cuda.synchronize(self.device)
         return func
     
@@ -282,8 +309,7 @@ class ConvMeasure(object):
                 info['data'] = []
             for evt in events:
                 if evt.device_type == DeviceType.CPU:
-                    duration = sum([k.duration for k in evt.kernels]) / 1e3
-                    # print(evt.name, evt.kernels)
+                    duration = get_children_kernel_time(evt) / 1e3
                     if evt.name in self.backward_names:
                         tmp_dur_backward.append(duration)
                         backward_shape = evt.input_shapes
@@ -293,17 +319,21 @@ class ConvMeasure(object):
             
             dur_avg_forward = np.mean(tmp_dur_forward)
             dur_avg_backward = np.mean(tmp_dur_backward)
-            info['data'].append((dur_avg_forward, dur_avg_backward, self.dx) + self.params)      
+            info['data'].append((dur_avg_forward, dur_avg_backward, self.dx, self.use_fp16) + self.params)      
         return func
 
-    def run(self, step=1, dx=True, filename='conv_data'):
+    def run(self, step=1, dx=True, use_fp16=False, filename='conv_data'):
+        self.use_fp16 = use_fp16
+        if use_fp16:
+            self.scaler = torch.cuda.amp.GradScaler()
         with open(filename, 'ab+') as f:
-            for _ in range(step):
+            for _ in trange(step):
                 success = False
                 while not success:
                     success = True
                     try:
-                        ret = measure_op(partial(self.get_inputs_generator(), dx), self.get_measured_func(), self.get_analyze_func(), device=self.device) 
+                        ret = measure_op(partial(self.get_inputs_generator(), dx), self.get_measured_func(), self.get_analyze_func(), 
+                        device=self.device, use_fp16 = use_fp16) 
                     except RuntimeError:
                         # print("oom")
                         success = False
@@ -526,19 +556,20 @@ def measure_data_collect(filename='data'):
     pool_fw, pool_bw = pool_measure.numpy()
     np.savez('pool_10000', pool_fw=pool_fw, pool_bw=pool_bw)
 
-def mp_measure_conv(gpu_id):
+def mp_measure_conv(gpu_id, use_fp16=False):
     conv_measure = ConvMeasure(
-        batch_size_range=(1, 64),
+        batch_size_range=(1, 48),
         image_size_range=(2, 224),
         in_channels_range=(3, 1024),
         out_channels_range=(16, 1024),
         kernel_size_range=(1, 7),
         stride_range=(1, 7),
         padding_range=(1, 3),
+        use_fp16=use_fp16,
         device=torch.device(f'cuda:{gpu_id}')
     )
-    print("measuring conv")
-    conv_measure.run(100_000, dx=True, filename=f'conv_data_{gpu_id}.data')
+    print(f"measuring conv, fp16 enabled={use_fp16}")
+    conv_measure.run(100_000, dx=True, use_fp16=use_fp16, filename=f'conv_data_{"fp16_"}{gpu_id}.data')
 
 def mp_measure_matmul(gpu_id):
     matmul_measure = MatMulMeasure(
@@ -572,13 +603,14 @@ def mp_measure_maxpool(gpu_id):
     print("measuring maxpool")
     pool_measure.run(10_000, filename=f'maxpool_data_{gpu_id}.data')
 
-def mp_measure(func, num_gpus=4):
-    processes = [Process(target=func, args=(gpu_id, )) for gpu_id in range(num_gpus)]
+def mp_measure(func, num_gpus=4, *args, **kwargs):
+    processes = [Process(target=func, args=(gpu_id, ) + args, kwargs=kwargs) for gpu_id in range(num_gpus)]
     for p in processes:
         p.start()
     for p in processes:
         p.join()
 
 if __name__ == '__main__':
-    mp_measure(mp_measure_batchnorm, num_gpus=4)
+    # mp_measure(mp_measure_batchnorm, num_gpus=4)
+    mp_measure(mp_measure_conv, num_gpus=1, use_fp16=True)
 
