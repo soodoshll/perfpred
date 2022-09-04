@@ -301,7 +301,7 @@ class ConvMeasure(object):
         def func_fp16(data):
             A = data[0]
             layer = data[1]
-            with torch.autocast(device_type='cuda', dtype=torch.float32):
+            with torch.autocast(device_type='cuda', dtype=torch.float16):
                 out = layer(A)
                 out = out.sum()
             self.scaler.scale(out).backward()
