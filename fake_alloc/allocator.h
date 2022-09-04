@@ -2,11 +2,12 @@
 #define ALLOCATOR_H
 #include <cuda_runtime_api.h>
 #include <unordered_map>
+#include <mutex>
 // #include <vector>
 // 
 // enum cudaError_t : int;
 
-constexpr size_t BUFFER_SIZE = (size_t)1 * 1024 * 1024 * 1024;
+constexpr size_t BUFFER_SIZE = (size_t)6 * 1024 * 1024 * 1024;
 namespace pytorch_malloc {
 
 class Allocator {
@@ -30,6 +31,10 @@ class Allocator {
     alloc_max_ = alloc_cur_;
   }
 
+  void set_target_mem_limit(size_t x) {
+    target_mem_limit = x;
+  }
+
  private:
   void *devPtr_ = nullptr;
   size_t alloc_num_ = 0;
@@ -38,6 +43,8 @@ class Allocator {
   long long alloc_max_ = 0;
   // std::vector<size_t> size_;
   std::unordered_map<void*, size_t> size_;
+  size_t target_mem_limit = -1;
+  std::mutex mutex_;
 };
 
 }  // namespace pytorch_malloc

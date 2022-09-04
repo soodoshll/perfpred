@@ -293,12 +293,20 @@ class ConvMeasure(object):
         def func(data):
             A = data[0]
             layer = data[1]
+            out = layer(A)
+            out = out.sum()
+            out.backward()
+            torch.cuda.synchronize(self.device)
+
+        def func_fp16(data):
+            A = data[0]
+            layer = data[1]
             with torch.autocast(device_type='cuda', dtype=torch.float32):
                 out = layer(A)
                 out = out.sum()
             self.scaler.scale(out).backward()
             torch.cuda.synchronize(self.device)
-        return func
+        return func_fp16 if self.use_fp16 else func
     
     def get_analyze_func(self):
         def func(info, prof):

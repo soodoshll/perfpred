@@ -22,7 +22,7 @@ use_fake_alloc = os.environ.get("LD_PRELOAD", None) == "./fake_libcudart.so"
 print("Using fake allocator:", use_fake_alloc)
 if use_fake_alloc:
     import fake_alloc
-    fake_alloc.set_target_mem_limit(16_000_000_000)
+    fake_alloc.set_target_mem_limit(8_000_000_000)
 # 
 # torch.backends.cudnn.benchmark = False
 # torch.backends.cudnn.deterministic = True

@@ -3,6 +3,7 @@
 #include <assert.h> 
 
 #include <iostream>
+#include <mutex>
 
 #include "allocator.h"
 #include "cnmem/cnmem.h"
@@ -10,7 +11,7 @@
 #define DTYPE char
 // constexpr size_t BUFFER_SIZE = (size_t)2 * 1024 * 1024 * 1024;
 // constexpr size_t BUFFER_SIZE = (size_t)1;
-#define GRANULARITY 512
+#define GRANULARITY 64
 
 namespace pytorch_malloc {
 
@@ -44,7 +45,7 @@ cudaError_t cnmemStatus2cudaError(cnmemStatus_t status) {
 Allocator::Allocator() {
   cnmemDevice_t device;
   device.device = 0;
-  device.size = (size_t)1 * 1024 * 1024 * 1024;
+  device.size = (size_t)6 * 1024 * 1024 * 1024;
   // device.size = 0;
   device.numStreams = 0;
   device.streams = NULL;
@@ -59,45 +60,66 @@ Allocator::Allocator() {
 
 Allocator::~Allocator() {
   // printf("max mem: %.3f GB\n", alloc_max_ / 1e9);
+  // for (auto p : size_) {
+  //   printf("%p %.3f MB\n",p.first, p.second / 1e6);
+  // }
   cnmemFree(this->devPtr_, NULL);
   cnmemFinalize();
 }
 
 cudaError_t Allocator::malloc(void **devPtr, size_t size) {
+  std::lock_guard<std::mutex> guard(mutex_);
   // cnmemStatus_t status = cnmemMalloc(devPtr, size, NULL);
   // return cnmemStatus2cudaError(status);
-  if (size == 0) {
-    *devPtr = (DTYPE *)this->devPtr_ + 114514;
-    return cudaSuccess;
-  }
+  // if (size == 0) {
+    // *devPtr = (DTYPE *)this->devPtr_ + 114514;
+    // return cudaSuccess;
+  // }
   auto aligned_size = ceilInt(size, GRANULARITY);
+  if (target_mem_limit >= 0 && alloc_cur_ + aligned_size >= target_mem_limit) {
+    // printf("Fake OOM\n");
+    return cudaErrorMemoryAllocation; 
+  }
   // assert(size < BUFFER_SIZE / 2);
-  if (alloc_cur_ > alloc_max_)
-    alloc_max_ = alloc_cur_;
-  // if (alloc_num_ + aligned_size > BUFFER_SIZE)
-    // alloc_num_ = BUFFER_SIZE - aligned_size - GRANULARITY;
-  *devPtr = (DTYPE *)this->devPtr_ + alloc_num_ % (BUFFER_SIZE / 2);
-  // printf("%.3f GB | alloc: %lu | alloc_num_: %lu | addr: %p\n", alloc_num_ / 1e9, size, alloc_num_, devPtr);
+  alloc_num_ %= (BUFFER_SIZE / 2);
+  if (alloc_num_ + aligned_size >= BUFFER_SIZE) {
+    // printf("overflow %lu ", alloc_num_);
+    // alloc_num_ = BUFFER_SIZE - aligned_size;
+    alloc_num_ = 0;
+    // printf("%lu\n", alloc_num_);
+  }
+  // alloc_num_ = ceilInt(alloc_num_ % (BUFFER_SIZE / 2), GRANULARITY); 
+  *devPtr = (DTYPE *)this->devPtr_ + alloc_num_ ;
+  // *devPtr = (DTYPE *)this->devPtr_ + alloc_num_;
+  // printf("%.3f GB | alloc: %lu | alloc_num_: %lu | addr: %p\n", alloc_cur_ / 1e9, size, alloc_num_, *devPtr);
+  // printf("%lu, %llu\n", size, alloc_cur_);
   // *devPtr = (DTYPE *)this->devPtr_ + alloc_num_;
   // *devPtr = (DTYPE *)this->devPtr_ + alloc_num_;
   // cudaMemset(*devPtr, 0, size);
-  // if (size_.find(*devPtr) != size_.end())
-    // printf("corrupt %lu\n", alloc_num_);
+  while (size_.find(*devPtr) != size_.end()) {
+    // printf("corrupt %lu | old size %lu | new size %lu\n", alloc_num_, size_[*devPtr], size);
+    *devPtr = (DTYPE*)(*devPtr) + GRANULARITY;
+  }
   size_[*devPtr] = size;
   alloc_cur_ += size;
   alloc_num_ += aligned_size;
+  if (alloc_cur_ > alloc_max_)
+    alloc_max_ = alloc_cur_;
   // alloc_num_ += 64;
+  // alloc_num_ += 1;
   return cudaSuccess;
 }
 
 
 cudaError_t Allocator::free(void *devPtr) {
+  std::lock_guard<std::mutex> guard(mutex_);
   // cnmemStatus_t status = cnmemFree(devPtr, NULL);
   // return cnmemStatus2cudaError(status);
   // int diff = ((DTYPE *)devPtr - (DTYPE *)devPtr_) / OFFSET;
   auto size = size_[devPtr];
   alloc_cur_ -= size;
-  // printf("%.3f GB | free: %lu | addr: %p\n", alloc_cur_ / 1e9, size, devPtr);
+  size_.erase(devPtr);
+  // printf("%.3f GB | free: %lu | %lu | addr: %p\n", alloc_cur_ / 1e9, size, (DTYPE*)(devPtr) - (DTYPE*)(devPtr_), devPtr);
   return cudaSuccess;
 }
 

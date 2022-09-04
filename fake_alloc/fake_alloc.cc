@@ -12,8 +12,14 @@ void init_max_mem() {
     allocator->init_max_mem();
 }
 
+void set_target_mem_limit(size_t x) {
+    auto allocator = pytorch_malloc::Allocator::Instance();
+    allocator->set_target_mem_limit(x);
+}
+
 PYBIND11_MODULE(fake_alloc, m) {
     m.doc() = "utilities for the fake allocator";
     m.def("max_mem_allocated", &max_mem_allocated);
     m.def("init_max_mem", &init_max_mem);
+    m.def("set_target_mem_limit", &set_target_mem_limit);
 }

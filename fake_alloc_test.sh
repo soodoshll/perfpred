@@ -1,4 +1,4 @@
-for bs in $(seq 1 1 100)
+for bs in $(seq $1 $2)
 do
     cmd="python run_vgg.py --model vgg16 "$bs
     mem=$(eval LD_PRELOAD=./fake_libcudart.so PYTORCH_NO_CUDA_MEMORY_CACHING=1 $cmd "2>/dev/null")
