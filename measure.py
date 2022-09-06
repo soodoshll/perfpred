@@ -620,5 +620,5 @@ def mp_measure(func, num_gpus=4, *args, **kwargs):
 
 if __name__ == '__main__':
     # mp_measure(mp_measure_batchnorm, num_gpus=4)
-    mp_measure(mp_measure_conv, num_gpus=1, use_fp16=True)
+    mp_measure(mp_measure_conv, num_gpus=4, use_fp16=True)
 
