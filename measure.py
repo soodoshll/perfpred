@@ -139,15 +139,9 @@ def measure_op(inputs_generator, measured_func, analyze_func, device, use_fp16=F
         record_shapes=True,
         on_trace_ready=functools.partial(analyze_func, info)
     ) as profiler:
-        if use_fp16:
-            with torch.autocast(device_type='cuda', dtype=torch.float32):
-                for _ in range(nitr + 5):
-                    measured_func(data)
-                    profiler.step()
-        else:
-            for _ in range(nitr + 5):
-                measured_func(data)
-                profiler.step()
+        for _ in range(nitr + 5):
+            measured_func(data)
+            profiler.step()
         torch.cuda.synchronize(device)
     return info
 
