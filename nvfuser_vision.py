@@ -5,6 +5,7 @@ import time
 import numpy as np
 from utils import timing
 device = 'cuda'
+from matplotlib import pyplot as plt
 
 
 class ResBlock(torch.nn.Module):
@@ -26,8 +27,12 @@ class ResBlock(torch.nn.Module):
 
 # model = ResBlock(64, 64)
 nitr = 20
+model_names = ["resnet18", "resnet34", "resnet50", "resnet101", "resnet152"]
+time_before =[]
+time_after = []
+pred = []
 
-for model_name in ["resnet18", "resnet34", "resnet50", "resnet101", "resnet152"]:
+for model_name in model_names:
     bs = 32
     x = torch.rand(bs, 3, 224, 224, device=device)
     model = getattr(torchvision.models, model_name)()
@@ -37,16 +42,16 @@ for model_name in ["resnet18", "resnet34", "resnet50", "resnet101", "resnet152"]
     for _ in range(3):
         model(x)
     dur = timing(lambda : model(x), nitr)
-    # print("before compiled:", dur/50)
+    print("before compiled:", dur)
 
     traced_model = torch.jit.trace(model, (x, ))
-    # print("tracing completes")
+    print("tracing completes")
 
     for _ in range(3):
         traced_model(x)
-    # print("start profiling compiled version")
+    print("start profiling compiled version")
     dur1 = timing(lambda : traced_model(x), nitr)
-    # print("after compiled:", dur1/50)
+    print("after compiled:", dur1)
 
     graph = traced_model.graph_for(x)
     group_nodes = graph.findAllNodes("prim::CudaFusionGroup")
@@ -75,5 +80,32 @@ for model_name in ["resnet18", "resnet34", "resnet50", "resnet101", "resnet152"]
                 else:
                     io_size += 2 * io_amount
 
-    # print(io_size)
-    print(f"{model_name}, {dur}, {dur1}, {io_size * 4 / 1e9 / 448 * 1000}")
+    p = io_size * 4 / 1e9 / 448 * 1000
+    time_before.append(dur)
+    time_after.append(dur1)
+    pred.append(p)
+
+    del model, traced_model, graph, groups, group_nodes
+    torch.cuda.empty_cache()
+
+
+
+time_before = np.array(time_before)
+time_after = np.array(time_after)
+
+labels = model_names
+time_before_minus_pred = time_before - pred
+
+width = 0.35
+x = np.arange(len(labels))
+
+plt.bar(x - width/2, time_before_minus_pred, width=width, edgecolor="black")
+rects1 = plt.bar(x - width/2, pred, bottom=time_before_minus_pred, width=width, label="predicted acceleration", color="cyan", edgecolor="black")
+rects2 = plt.bar(x + width/2, time_after, width=width, label="running time after fusion", color="orange", edgecolor="black")
+plt.xticks(x, labels)
+plt.ylabel("Time (ms)")
+plt.legend()
+
+# plt.bar_label(rects1, padding=3)
+# plt.bar_label(rects2, padding=3)
+plt.savefig('nvfuser_resnets.png')
