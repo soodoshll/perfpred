@@ -1,4 +1,3 @@
-from json import load
 import torch
 from torch import nn 
 import time
@@ -6,6 +5,8 @@ from vgg import build_vgg_model
 # from apex import amp 
 import pickle
 import torchvision
+from predictor import load_model
+linear_pred, conv_pred, maxpool_pred = load_model()
 
 def timing(func, nitr=1):
     torch.cuda.synchronize()
@@ -40,7 +41,7 @@ def load_data(filenames):
                     break
     return rows
 
-data = load_data(["conv_data_fp16_0.data"])
+data = load_data(["data_backup/conv_data_fp16_0.data"])
 # batch_size = 32
 # in_channels = 64
 # image_size = 224
@@ -60,8 +61,12 @@ nitr = 20
 
 for d in data:
     _, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, is_forward, use_fp16, dur = d
+    # print(d)
     if not is_forward:
         continue
+    pred = conv_pred.predict(
+        [0, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, 1, 1]
+    )    
     x = torch.rand((batch_size, in_channels, image_size, image_size), device=device, requires_grad=True, dtype=torch.float16)
     model = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False, device=device)
     def foo():
@@ -79,4 +84,4 @@ for d in data:
     # dur = timing(lambda: model(x), nitr)
         dur_tc = timing(foo, nitr)
     # print(batch_size, dur, dur_tc)
-    print(batch_size, dur, dur_tc)
+    print(batch_size, dur, dur_tc, pred)

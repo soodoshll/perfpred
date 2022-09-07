@@ -313,6 +313,7 @@ class ConvMeasure(object):
                 if evt.device_type == DeviceType.CPU:
                     duration = get_children_kernel_time(evt) / 1e3
                     if evt.name in self.backward_names:
+                        # print(evt.name)
                         tmp_dur_backward.append(duration)
                         backward_shape = evt.input_shapes
                     elif evt.name == self.forward_name:
