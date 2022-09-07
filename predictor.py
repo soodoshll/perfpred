@@ -16,7 +16,8 @@ from matplotlib import pyplot as plt
 
 LINEAR_PATH = glob.glob("matmul_data_*.data")
 CONV2D_PATH_SQL = ["./habitat-data/conv2d/conv2d-RTX2080Ti-0.sqlite", "./habitat-data/conv2d/conv2d-RTX2080Ti-1.sqlite"]
-CONV2D_PATH = glob.glob("conv_data_*.data")
+# CONV2D_PATH = glob.glob("./data/conv_data_*.data")
+CONV2D_PATH =  glob.glob("./data_backup/conv_data_fp16_*.data") #+ glob.glob("./data/conv_data_*.data")
 # CONV2D_PATH = glob.glob("data_backup/conv_data_*.data")
 MAXPOOL_PATH = glob.glob("maxpool_data_*.data")
 BATCHNORM_PATH = glob.glob("batchnorm_data_*.data")
@@ -45,8 +46,6 @@ def make_mlp(device, input_dim, hidden_layers=[1024] * 6  , activation=nn.LeakyR
 # class ConvPerfNet(nn.Module):
 #     def __init__(self):
 #         super(ConvPerfNet, self).__init__()
-
-
 
 def NormL1(output, target, inputs):
     bs = inputs[:, 1]
@@ -110,7 +109,7 @@ class Predictor(object):
         optim = torch.optim.Adam(
                 model.parameters(), 
                 lr=5e-4, 
-                weight_decay=1e-4
+                weight_decay=1e-3
                 )
         
         for epoch_idx in trange(num_epoch):
@@ -149,14 +148,16 @@ class Predictor(object):
         return out.detach().numpy()
 
     def test_set_error(self, batch_size=1000, filename=None):
+        # print(len(self.test_set))
         dataloader = torch.utils.data.DataLoader(self.test_set, batch_size=batch_size, shuffle=True) 
         errors = []
         for data in dataloader:
-            inputs = self.preprocess(data[:, :-1]).to(device)
-            labels = data[:, -1].to(device)
+            inputs = self.preprocess(data[:, :-1]).to(self.device)
+            labels = data[:, -1].to(self.device)
             out = self.model(inputs)
             pred = out[:, 0] * self.stds[-1] + self.avgs[-1]
             truth = labels * self.stds[-1] + self.avgs[-1]
+            # print(pred[0], truth[0])
             error = (pred - truth) / truth
             errors.append(error)
         errors = torch.concat(errors)
@@ -164,7 +165,7 @@ class Predictor(object):
         if filename is not None:
             plt.hist(errors, bins=100)
             plt.savefig(filename)
-        print(sum(errors > 1) / len(errors))
+        # print(sum(errors > 1) / len(errors))
 
         return np.mean(np.abs(errors))
 
@@ -251,7 +252,7 @@ def modpos(n, m, zero_base = True):
 class Conv2DPredictor(Predictor):
     def __init__(self, modulo=True, device=torch.device('cpu')):
         self.feature_name = ['bias', 'batch', 'image_size', 'in_channels', 'out_channels', 'kernel_size',
-        'stride', 'padding', 'is_forward']
+        'stride', 'padding', 'is_forward', 'use_fp16']
 
         self.device = device
         self.modulo = modulo
@@ -263,6 +264,8 @@ class Conv2DPredictor(Predictor):
         # self.xgb_r = xgb.XGBRegressor(objective ='reg:squarederror',
                 #   n_estimators = 200, seed = 123)
 
+    def shrink_training_set(self, n):
+        self.train_set = self.train_set[:n]
 
     def load_data(self, filenames):
         rows = []
@@ -272,13 +275,17 @@ class Conv2DPredictor(Predictor):
                     try:
                         objs = pickle.load(f)
                         for obj in objs:
-                            dur_forward, dur_backward, dx, batch_size, kernel_size, image_size, in_channels, out_channels, stride, padding = obj
+                            if len(obj) == 10:
+                                use_fp16 = False
+                                dur_forward, dur_backward, dx, batch_size, kernel_size, image_size, in_channels, out_channels, stride, padding = obj
+                            else:
+                                dur_forward, dur_backward, dx, use_fp16, batch_size, kernel_size, image_size, in_channels, out_channels, stride, padding = obj
                             rows.append(
-                                (0, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, 1, dur_forward)
+                                (0, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, 1, use_fp16, dur_forward)
                             )
                             rows.append(
                                 (0, batch_size, 
-                                image_size, in_channels, out_channels, kernel_size, stride, padding, 0, dur_backward)
+                                image_size, in_channels, out_channels, kernel_size, stride, padding, 0, use_fp16, dur_backward)
                             )
                     except (EOFError):
                         break
@@ -299,6 +306,9 @@ class Conv2DPredictor(Predictor):
 
         self.avgs[-2] = 0
         self.stds[-2] = 1
+
+        self.avgs[-3] = 0
+        self.stds[-3] = 1
         ####
 
         print("avg:", self.avgs)
@@ -461,21 +471,23 @@ def train():
     #                 num_epoch=80, 
     #                 hooks=[lambda : print("error on test set:", linear_pred.test_set_error())])
     # return
-    # modulo = False
-    # conv_pred = Conv2DPredictor(modulo, device=device)
+    modulo = False
+    conv_pred = Conv2DPredictor(modulo, device=device)
     # # conv_pred.load_data_mix(sql_filenames=CONV2D_PATH_SQL, py_filenames=CONV2D_PATH)
-    # conv_pred.load_data(filenames=CONV2D_PATH)
+    conv_pred.load_data(filenames=CONV2D_PATH)
     # return
     # plt.hist(conv_pred.raw_dataset[:,-1].numpy())
     # plt.savefig("conv_data.png") 
     
+    # n = 300_000
+    # conv_pred.shrink_training_set(n)
     # model_name = "predictor_model_conv2d.th" if modulo else "predictor_model_conv2d_0.th"
-
-    # conv_pred.train(model_name,
-    #                 batch_size=512,
-    #                 num_epoch=300, 
-    #                 hooks=[lambda : print("error on test set:", conv_pred.test_set_error())])
-    # error = conv_pred.test_set_error(filename="conv_error.png")
+    model_name = "predictor_model_conv2d.th"
+    conv_pred.train(model_name,
+                    batch_size=512,
+                    num_epoch=300, 
+                    hooks=[lambda : print("error on test set:", conv_pred.test_set_error())])
+    error = conv_pred.test_set_error(filename="conv_error.png")
 
     # error = conv_pred.train_set_error()
     # maxpool_pred = MaxPoolingPredictor()
@@ -485,22 +497,22 @@ def train():
     #                     num_epoch=200,
     #                     hooks=[lambda : print("error on test set:", maxpool_pred.test_set_error())])
 
-    batchnorm_pred = BatchNormPredictor(device=device)
-    batchnorm_pred.load_data(BATCHNORM_PATH)
-    batchnorm_pred.train("predicator_model_batchnorm.th",
-                         batch_size=512,
-                         num_epoch=200,
-                         hooks=[lambda : print("error on test set:", batchnorm_pred.test_set_error())])
+    # batchnorm_pred = BatchNormPredictor(device=device)
+    # batchnorm_pred.load_data(BATCHNORM_PATH)
+    # batchnorm_pred.train("predicator_model_batchnorm.th",
+    #                      batch_size=512,
+    #                      num_epoch=200,
+    #                      hooks=[lambda : print("error on test set:", batchnorm_pred.test_set_error())])
 
 def load_model():
     linear_pred = LinearPredictor()
-    linear_pred.load_model("predictor_model_linear.th")
+    linear_pred.load_model("./model/predictor_model_linear.th")
 
-    conv_pred = Conv2DPredictor()
+    conv_pred = Conv2DPredictor(modulo=False)
     conv_pred.load_model("predictor_model_conv2d.th")
 
     maxpool_pred = MaxPoolingPredictor() 
-    maxpool_pred.load_model("predictor_model_maxpool.th")
+    maxpool_pred.load_model("./model/predictor_model_maxpool.th")
 
     return linear_pred, conv_pred, maxpool_pred
 

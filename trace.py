@@ -210,7 +210,7 @@ model.to(device)
 loss_fn = nn.CrossEntropyLoss()
 optim = torch.optim.SGD(model.parameters(), lr=1e-3)
 
-conv_pred = Conv2DPredictor()
+conv_pred = Conv2DPredictor(True)
 conv_pred.load_model("./model/predictor_model_conv2d.th")
 
 linear_pred = LinearPredictor()
@@ -295,23 +295,23 @@ def trace_func():
     torch.cuda.synchronize()
     del out
 
-# for batch_size in range(32, 33):
-#     tracer = Tracer()
-#     inputs = torch.rand([batch_size, 3, 224, 224], device=device)
-#     labels = torch.randint(1000 - 1, (batch_size, ), device=device)
-#     trace = tracer.trace(trace_func)
-#     # print(trace)
-#     pred, pred_dur = predict_using_trace(model, trace)
+for batch_size in range(16, 17):
+    tracer = Tracer()
+    inputs = torch.rand([batch_size, 3, 224, 224], device=device)
+    labels = torch.randint(1000 - 1, (batch_size, ), device=device)
+    trace = tracer.trace(trace_func)
+    # print(trace)
+    pred, pred_dur = predict_using_trace(model, trace)
 
-#     events = profile_model(trace_func)
-#     truth, truth_kernel_time, unmarked_events, trace_with_dur = tracer.match_trace_and_events(trace, events)
+    events = profile_model(trace_func)
+    truth, truth_kernel_time, unmarked_events, trace_with_dur = tracer.match_trace_and_events(trace, events)
 
-#     for evt in unmarked_events:
-#         pred += BINARY_COEFF * np.prod(evt.input_shapes[0])
+    for evt in unmarked_events:
+        pred += BINARY_COEFF * np.prod(evt.input_shapes[0])
 
-#     print(f"{batch_size}, {pred}, {truth_kernel_time}, {truth}")
-#     for t_item, pred_module_dur in zip(trace_with_dur, pred_dur):
-#         is_forward, module, _, dur = t_item
-#         if isinstance(module, nn.Conv2d):
-#             print(f'{is_forward}, {str(type(module))[25:-2]}, {pred_module_dur}, {dur/1e3}')
-#     del inputs, labels, trace, events, tracer
+    print(f"{batch_size}, {pred}, {truth_kernel_time}, {truth}")
+    for t_item, pred_module_dur in zip(trace_with_dur, pred_dur):
+        is_forward, module, _, dur = t_item
+        if isinstance(module, nn.Conv2d):
+            print(f'{is_forward}, {str(type(module))[25:-2]}, {pred_module_dur}, {dur/1e3}')
+    del inputs, labels, trace, events, tracer
