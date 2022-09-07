@@ -131,7 +131,7 @@ def measure_op(inputs_generator, measured_func, analyze_func, device, use_fp16=F
     with torch.profiler.profile(
         schedule= torch.profiler.schedule(
             wait=1,
-            warmup=3,
+            warmup=1,
             active=nitr,
             repeat=1),
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
@@ -139,7 +139,7 @@ def measure_op(inputs_generator, measured_func, analyze_func, device, use_fp16=F
         record_shapes=True,
         on_trace_ready=functools.partial(analyze_func, info)
     ) as profiler:
-        for _ in range(nitr + 5):
+        for _ in range(nitr + 3):
             measured_func(data)
             profiler.step()
         torch.cuda.synchronize(device)
@@ -572,7 +572,8 @@ def mp_measure_conv(gpu_id, use_fp16=False):
         device=torch.device(f'cuda:{gpu_id}')
     )
     print(f"measuring conv, fp16 enabled={use_fp16}")
-    conv_measure.run(100_000, dx=True, use_fp16=use_fp16, filename=f'conv_data_{"fp16_"}{gpu_id}.data')
+    # conv_measure.run(100_000, dx=True, use_fp16=use_fp16, filename=f'conv_data_{"fp16_"}{gpu_id}.data')
+    conv_measure.run(100_000, dx=True, use_fp16=use_fp16, filename=f'conv_data_{"fp16_" if use_fp16 else ""}{gpu_id}.data')
 
 def mp_measure_matmul(gpu_id):
     matmul_measure = MatMulMeasure(
