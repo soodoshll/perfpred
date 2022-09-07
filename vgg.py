@@ -92,9 +92,9 @@ if __name__ == '__main__':
                 optim.zero_grad(set_to_none=True)
                 x = inputs
                 x = model(x)
-                loss = loss_fn(x, labels)
-                loss.backward()
-                optim.step()
+                # loss = loss_fn(x, labels)
+                # loss.backward()
+                # optim.step()
                 torch.cuda.synchronize()
                 profiler.step()
         # dur_tot = np.mean(record)
