@@ -580,7 +580,8 @@ def mp_measure_conv(gpu_id, use_fp16=False):
         device=torch.device(f'cuda:{gpu_id}')
     )
     print(f"measuring conv, fp16 enabled={use_fp16}")
-    conv_measure.run(100_000, dx=True, use_fp16=use_fp16, filename=f'conv_data_{"fp16_"}{gpu_id}.data')
+    # conv_measure.run(100_000, dx=True, use_fp16=use_fp16, filename=f'conv_data_{"fp16_"}{gpu_id}.data')
+    conv_measure.run(100_000, dx=True, use_fp16=use_fp16, filename=f'conv_data_{"fp16_" if use_fp16 else ""}{gpu_id}.data')
 
 def mp_measure_matmul(gpu_id):
     matmul_measure = MatMulMeasure(

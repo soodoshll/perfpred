@@ -17,7 +17,7 @@ from matplotlib import pyplot as plt
 LINEAR_PATH = glob.glob("matmul_data_*.data")
 CONV2D_PATH_SQL = ["./habitat-data/conv2d/conv2d-RTX2080Ti-0.sqlite", "./habitat-data/conv2d/conv2d-RTX2080Ti-1.sqlite"]
 # CONV2D_PATH = glob.glob("./data/conv_data_*.data")
-CONV2D_PATH =  glob.glob("./data_backup/conv_data_fp16_*.data") #+ glob.glob("./data/conv_data_*.data")
+CONV2D_PATH =  glob.glob("./conv_data_fp16_*.data") #+ glob.glob("./data/conv_data_*.data")
 # CONV2D_PATH = glob.glob("data_backup/conv_data_*.data")
 MAXPOOL_PATH = glob.glob("maxpool_data_*.data")
 BATCHNORM_PATH = glob.glob("batchnorm_data_*.data")
@@ -463,6 +463,7 @@ class BatchNormPredictor(Predictor):
         test_set_size = self.dataset.shape[0] - train_set_size
         self.train_set, self.test_set = torch.utils.data.random_split(self.dataset, [train_set_size, test_set_size]) 
 
+modulo = True
 def train():
     # linear_pred = LinearPredictor()
     # linear_pred.load_data(LINEAR_PATH)
@@ -471,7 +472,6 @@ def train():
     #                 num_epoch=80, 
     #                 hooks=[lambda : print("error on test set:", linear_pred.test_set_error())])
     # return
-    modulo = False
     conv_pred = Conv2DPredictor(modulo, device=device)
     # # conv_pred.load_data_mix(sql_filenames=CONV2D_PATH_SQL, py_filenames=CONV2D_PATH)
     conv_pred.load_data(filenames=CONV2D_PATH)
@@ -508,7 +508,7 @@ def load_model():
     linear_pred = LinearPredictor()
     linear_pred.load_model("./model/predictor_model_linear.th")
 
-    conv_pred = Conv2DPredictor(modulo=False)
+    conv_pred = Conv2DPredictor(modulo=modulo)
     conv_pred.load_model("predictor_model_conv2d.th")
 
     maxpool_pred = MaxPoolingPredictor() 

@@ -80,7 +80,7 @@ for model_name in model_names:
                 else:
                     io_size += 2 * io_amount
 
-    p = io_size * 4 / 1e9 / 448 * 1000
+    p = io_size * 4 / 1e9 / 616 * 1000
     time_before.append(dur)
     time_after.append(dur1)
     pred.append(p)
