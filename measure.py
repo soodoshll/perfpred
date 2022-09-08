@@ -8,10 +8,18 @@ import numpy as np
 from tqdm import tqdm, trange
 import pickle
 
+import argparse
 import random
 import time
 from multiprocessing import Process
 from matplotlib import pyplot as plt
+
+parser = argparse.ArgumentParser()
+parser.add_argument("op", choices=["conv2d", "mm", "batchnorm", "avgpool2d"])
+parser.add_argument("--num_gpus", type=int, default=1)
+parser.add_argument("--use_fp16", action="store_true")
+
+args = parser.parse_args()
 
 # device = torch.device('cuda')
 torch.set_grad_enabled(True)
@@ -131,7 +139,7 @@ def measure_op(inputs_generator, measured_func, analyze_func, device, use_fp16=F
     with torch.profiler.profile(
         schedule= torch.profiler.schedule(
             wait=1,
-            warmup=3,
+            warmup=1,
             active=nitr,
             repeat=1),
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
@@ -139,7 +147,7 @@ def measure_op(inputs_generator, measured_func, analyze_func, device, use_fp16=F
         record_shapes=True,
         on_trace_ready=functools.partial(analyze_func, info)
     ) as profiler:
-        for _ in range(nitr + 5):
+        for _ in range(nitr + 3):
             measured_func(data)
             profiler.step()
         torch.cuda.synchronize(device)
@@ -607,13 +615,19 @@ def mp_measure_maxpool(gpu_id):
     pool_measure.run(10_000, filename=f'maxpool_data_{gpu_id}.data')
 
 def mp_measure(func, num_gpus=4, *args, **kwargs):
-    processes = [Process(target=func, args=(gpu_id, ) + args, kwargs=kwargs) for gpu_id in range(num_gpus)]
-    for p in processes:
-        p.start()
-    for p in processes:
-        p.join()
+    if num_gpus == 1:
+        func(0, *args, **kwargs)
+    else:
+        processes = [Process(target=func, args=(gpu_id, ) + args, kwargs=kwargs) for gpu_id in range(num_gpus)]
+        for p in processes:
+            p.start()
+        for p in processes:
+            p.join()
 
 if __name__ == '__main__':
     # mp_measure(mp_measure_batchnorm, num_gpus=4)
-    mp_measure(mp_measure_conv, num_gpus=4, use_fp16=True)
+    if args.op == "conv2d":
+        mp_measure(mp_measure_conv, num_gpus=args.num_gpus, use_fp16=args.use_fp16)
+    else:
+        raise RuntimeError("Not supported")
 

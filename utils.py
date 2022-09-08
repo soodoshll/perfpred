@@ -1,5 +1,7 @@
 import torch
-def timing(func, nitr=1):
+def timing(func, warmup=3, nitr=20):
+    for _ in range(warmup):
+        func()
     torch.cuda.synchronize()
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)
