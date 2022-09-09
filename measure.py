@@ -12,7 +12,7 @@ import argparse
 import random
 import time
 from multiprocessing import Process
-from matplotlib import pyplot as plt
+# from matplotlib import pyplot as plt
 
 parser = argparse.ArgumentParser()
 parser.add_argument("op", choices=["conv2d", "mm", "batchnorm", "avgpool2d"])
