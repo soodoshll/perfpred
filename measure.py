@@ -11,6 +11,8 @@ import pickle
 import argparse
 import random
 import time
+import os
+
 from multiprocessing import Process
 # from matplotlib import pyplot as plt
 
@@ -18,6 +20,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("op", choices=["conv2d", "mm", "batchnorm", "avgpool2d"])
 parser.add_argument("--num_gpus", type=int, default=1)
 parser.add_argument("--use_fp16", action="store_true")
+parser.add_argument("--data_dir", type=str, default="./data/")
 
 args = parser.parse_args()
 
@@ -582,7 +585,9 @@ def mp_measure_conv(gpu_id, use_fp16=False):
     )
     print(f"measuring conv, fp16 enabled={use_fp16}")
     # conv_measure.run(100_000, dx=True, use_fp16=use_fp16, filename=f'conv_data_{"fp16_"}{gpu_id}.data')
-    conv_measure.run(100_000, dx=True, use_fp16=use_fp16, filename=f'conv_data_{"fp16_" if use_fp16 else ""}{gpu_id}.data')
+    filename = f"conv_data_{'fp16_' if use_fp16 else ''}{gpu_id}.data"
+    filename = os.path.join(args.data_dir, filename)
+    conv_measure.run(100_000, dx=True, use_fp16=use_fp16, filename=filename)
 
 def mp_measure_matmul(gpu_id):
     matmul_measure = MatMulMeasure(
