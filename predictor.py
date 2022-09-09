@@ -12,7 +12,7 @@ from functools import partial
 # from torchmetrics import MeanAbsolutePercentageError
 import glob, pickle
 import argparse
-from matplotlib import pyplot as plt
+# from matplotlib import pyplot as plt
 
 LINEAR_PATH = glob.glob("matmul_data_*.data")
 CONV2D_PATH_SQL = ["./habitat-data/conv2d/conv2d-RTX2080Ti-0.sqlite", "./habitat-data/conv2d/conv2d-RTX2080Ti-1.sqlite"]

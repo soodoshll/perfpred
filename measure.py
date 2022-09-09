@@ -346,7 +346,7 @@ class ConvMeasure(object):
                         ret = measure_op(partial(self.get_inputs_generator(), dx), self.get_measured_func(), self.get_analyze_func(), 
                         device=self.device, use_fp16 = use_fp16) 
                     except RuntimeError as e:
-                        print(e)
+                        # print(e)
                         success = False
                         # torch.cuda.empty_cache()
                 pickle.dump(ret['data'], f)

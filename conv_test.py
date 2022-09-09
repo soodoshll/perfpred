@@ -1,8 +1,11 @@
 import torch
-from predictor import load_model
+from predictor import Conv2DPredictor
 from torch import nn
 torch.backends.cudnn.benchmark = True
-linear_pred, conv_pred, maxpool_pred = load_model()
+# linear_pred, conv_pred, maxpool_pred = load_model()
+conv_pred = Conv2DPredictor(modulo=True)
+conv_pred.load_model("predictor_model_conv2d.th")
+
 device = torch.device('cuda')
 
 scaler = torch.cuda.amp.GradScaler()
@@ -18,13 +21,13 @@ nitr = 20
 warm_up = 5
  
 for batch_size in range(1, 48):
-    x = torch.rand((batch_size, in_channels, image_size, image_size), device=device, requires_grad=True, dtype=torch.float16)
+    x = torch.rand((batch_size, in_channels, image_size, image_size), device=device, requires_grad=True, dtype=torch.float32)
     model = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False, device=device)
     grad = torch.ones_like(x)
     def foo():
-        with torch.autocast(device_type='cuda', dtype=torch.float16):
-            out = model(x)
-            out.backward(grad)
+        # with torch.autocast(device_type='cuda', dtype=torch.float16):
+        out = model(x)
+        out.backward(grad)
             # out = out.sum()
             # scaler.scale(out).backward()
             # loss = out.sum()
