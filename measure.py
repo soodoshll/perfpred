@@ -569,13 +569,13 @@ def measure_data_collect(filename='data'):
 
 def mp_measure_conv(gpu_id, use_fp16=False):
     conv_measure = ConvMeasure(
-        batch_size_range=(1, 128),
+        batch_size_range=(1, 64),
         image_size_range=(2, 224),
         in_channels_range=(3, 1024),
         out_channels_range=(16, 1024),
         kernel_size_range=(1, 7),
         stride_range=(1, 7),
-        padding_range=(1, 3),
+        padding_range=(0, 3),
         use_fp16=use_fp16,
         device=torch.device(f'cuda:{gpu_id}')
     )
