@@ -587,7 +587,7 @@ def mp_measure_conv(gpu_id, device_type, use_fp16=False):
     )
     print(f"measuring conv, fp16 enabled={use_fp16}")
     # conv_measure.run(100_000, dx=True, use_fp16=use_fp16, filename=f'conv_data_{"fp16_"}{gpu_id}.data')
-    filename = f"conv_data_{'fp16_' if use_fp16 else ''}{gpu_id}.data"
+    filename = f"conv_data_{device_type}_{'fp16_' if use_fp16 else ''}{gpu_id}.data"
     filename = os.path.join(args.data_dir, filename)
     conv_measure.run(100_000, dx=True, use_fp16=use_fp16, filename=filename)
 
