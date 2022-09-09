@@ -569,7 +569,7 @@ def measure_data_collect(filename='data'):
 
 def mp_measure_conv(gpu_id, use_fp16=False):
     conv_measure = ConvMeasure(
-        batch_size_range=(1, 48),
+        batch_size_range=(1, 128),
         image_size_range=(2, 224),
         in_channels_range=(3, 1024),
         out_channels_range=(16, 1024),
