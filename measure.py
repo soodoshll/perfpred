@@ -346,7 +346,7 @@ class ConvMeasure(object):
                         ret = measure_op(partial(self.get_inputs_generator(), dx), self.get_measured_func(), self.get_analyze_func(), 
                         device=self.device, use_fp16 = use_fp16) 
                     except RuntimeError as e:
-                        # print(e)
+                        print(e)
                         success = False
                         # torch.cuda.empty_cache()
                 pickle.dump(ret['data'], f)
@@ -623,6 +623,14 @@ def mp_measure(func, num_gpus=4, *args, **kwargs):
         processes = [Process(target=func, args=(gpu_id, ) + args, kwargs=kwargs) for gpu_id in range(num_gpus)]
         for p in processes:
             p.start()
+        while True:
+            for i in range(len(processes)):
+                if not processes[i].is_alive():
+                    print("RESTART", i)
+                    processes[i] = Process(target=func, args=(i, ) + args, kwargs=kwargs)
+                    processes[i].start()
+            time.sleep(1)
+
         for p in processes:
             p.join()
 
