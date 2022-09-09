@@ -633,9 +633,12 @@ def mp_measure(func, device_type, num_gpus=4, *args, **kwargs):
         while True:
             for i in range(len(processes)):
                 processes[i].join(180)
-                processes[i] = Process(target=func, args=(i, ) + args, kwargs=kwargs)
+                if processes[i].is_alive():
+                   processes[i].terminate() 
+                   time.sleep(1)
+                processes[i] = Process(target=func, args=(i, device_type) + args, kwargs=kwargs)
                 processes[i].start()
-            time.sleep(1)
+            
 
         for p in processes:
             p.join()

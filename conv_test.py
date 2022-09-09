@@ -25,9 +25,10 @@ for batch_size in range(1, 48):
     model = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False, device=device)
     grad = torch.ones_like(x)
     def foo():
-        # with torch.autocast(device_type='cuda', dtype=torch.float16):
-        out = model(x)
-        out.backward(grad)
+        with torch.autocast(device_type='cuda', dtype=torch.float16):
+            out = model(x)
+        return out
+        # out.backward(grad)
             # out = out.sum()
             # scaler.scale(out).backward()
             # loss = out.sum()
@@ -40,15 +41,15 @@ for batch_size in range(1, 48):
             foo()
         torch.cuda.synchronize()
 
-    # dur = timing(lambda: model(x), nitr)
-    dur_tc = timing(foo, nitr)
+        dur_tc = timing(lambda: model(x), nitr)
+        # dur_tc = timing(foo, nitr)
     # print(batch_size, dur, dur_tc)
     pred = conv_pred.predict(
         [0, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, 1, 1]
     ) 
-    pred += conv_pred.predict(
-        [0, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, 0, 1]
-    ) 
+    # pred += conv_pred.predict(
+        # [0, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, 0, 1]
+    # ) 
     print(f"{batch_size}, {dur_tc}, {pred}")
 
 exit()
