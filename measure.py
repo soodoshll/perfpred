@@ -16,6 +16,7 @@ from multiprocessing import Process
 
 parser = argparse.ArgumentParser()
 parser.add_argument("op", choices=["conv2d", "mm", "batchnorm", "avgpool2d"])
+parser.add_argument("device", choices=['2070', '2080ti', 't4', 'v100'])
 parser.add_argument("--num_gpus", type=int, default=1)
 parser.add_argument("--use_fp16", action="store_true")
 
@@ -347,6 +348,7 @@ class ConvMeasure(object):
                         device=self.device, use_fp16 = use_fp16) 
                     except RuntimeError:
                         # print("oom")
+                        time.sleep(0.5)
                         success = False
                 pickle.dump(ret['data'], f)
                 f.flush()
@@ -567,7 +569,8 @@ def measure_data_collect(filename='data'):
     pool_fw, pool_bw = pool_measure.numpy()
     np.savez('pool_10000', pool_fw=pool_fw, pool_bw=pool_bw)
 
-def mp_measure_conv(gpu_id, use_fp16=False):
+def mp_measure_conv(gpu_id, device_type, use_fp16=False):
+    max_batch_size = 48 if device_type == "2070" else 64
     conv_measure = ConvMeasure(
         batch_size_range=(1, 64),
         image_size_range=(2, 224),
@@ -583,7 +586,7 @@ def mp_measure_conv(gpu_id, use_fp16=False):
     # conv_measure.run(100_000, dx=True, use_fp16=use_fp16, filename=f'conv_data_{"fp16_"}{gpu_id}.data')
     conv_measure.run(100_000, dx=True, use_fp16=use_fp16, filename=f'conv_data_{"fp16_" if use_fp16 else ""}{gpu_id}.data')
 
-def mp_measure_matmul(gpu_id):
+def mp_measure_matmul(gpu_id, device_type):
     matmul_measure = MatMulMeasure(
         n_range=(1, 1024),
         m_range=(1, 32768),
@@ -593,7 +596,7 @@ def mp_measure_matmul(gpu_id):
     print("measuring matmul")
     matmul_measure.run(10_000, filename=f'matmul_data_{gpu_id}.data')
 
-def mp_measure_batchnorm(gpu_id):
+def mp_measure_batchnorm(gpu_id, device_type):
     batchnorm_measure = BatchNormMeasure(
         batch_size_range=(1, 64),
         image_size_range=(2, 224),
@@ -603,7 +606,7 @@ def mp_measure_batchnorm(gpu_id):
     print("measuring batchnorm")
     batchnorm_measure.run(10_000, filename=f'batchnorm_data_{gpu_id}.data')
 
-def mp_measure_maxpool(gpu_id):
+def mp_measure_maxpool(gpu_id, device_type):
     pool_measure = MaxPoolingMeasure(
         batch_size_range=(1, 64),
         image_size_range=(2, 256),
@@ -615,11 +618,11 @@ def mp_measure_maxpool(gpu_id):
     print("measuring maxpool")
     pool_measure.run(10_000, filename=f'maxpool_data_{gpu_id}.data')
 
-def mp_measure(func, num_gpus=4, *args, **kwargs):
+def mp_measure(func, device_type, num_gpus=4, *args, **kwargs):
     if num_gpus == 1:
-        func(0, *args, **kwargs)
+        func(0, device_type, *args, **kwargs)
     else:
-        processes = [Process(target=func, args=(gpu_id, ) + args, kwargs=kwargs) for gpu_id in range(num_gpus)]
+        processes = [Process(target=func, args=(gpu_id, device_type) + args, kwargs=kwargs) for gpu_id in range(num_gpus)]
         for p in processes:
             p.start()
         for p in processes:
@@ -628,7 +631,7 @@ def mp_measure(func, num_gpus=4, *args, **kwargs):
 if __name__ == '__main__':
     # mp_measure(mp_measure_batchnorm, num_gpus=4)
     if args.op == "conv2d":
-        mp_measure(mp_measure_conv, num_gpus=args.num_gpus, use_fp16=args.use_fp16)
+        mp_measure(mp_measure_conv, args.device, num_gpus=args.num_gpus, use_fp16=args.use_fp16)
     else:
         raise RuntimeError("Not supported")
 
