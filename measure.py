@@ -632,7 +632,7 @@ def mp_measure(func, device_type, num_gpus=4, *args, **kwargs):
             p.start()
         while True:
             for i in range(len(processes)):
-                processes[i].join(180)
+                processes[i].join(60)
                 if processes[i].is_alive():
                    processes[i].terminate() 
                    time.sleep(1)
