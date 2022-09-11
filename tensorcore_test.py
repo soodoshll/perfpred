@@ -5,19 +5,12 @@ from vgg import build_vgg_model
 # from apex import amp 
 import pickle
 import torchvision
-from predictor import load_model
-linear_pred, conv_pred, maxpool_pred = load_model()
+from predictor import load_model, Conv2DPredictor
+# linear_pred, conv_pred, maxpool_pred = load_model()
+conv_pred = Conv2DPredictor(True)
+conv_pred.load_model("./predictor_model_conv2d.th")
 
-def timing(func, nitr=1):
-    torch.cuda.synchronize()
-    start = torch.cuda.Event(enable_timing=True)
-    end = torch.cuda.Event(enable_timing=True)
-    start.record()
-    for _ in range(nitr):
-        func()
-    end.record()
-    torch.cuda.synchronize()
-    return start.elapsed_time(end) / nitr
+from utils import timing
 
 device = torch.device('cuda')
 
@@ -41,11 +34,13 @@ def load_data(filenames):
                     break
     return rows
 
-data = load_data(["data_backup/conv_data_fp16_0.data"])
+data = load_data(["data/eco-13/conv_data_2080ti_fp16_1.data"])
+data = data[-30:]
+print(data)
 # batch_size = 32
 # in_channels = 64
 # image_size = 224
-warm_up = 5
+warm_up = 10
 nitr = 20
 
 # out_channels = 64
@@ -67,21 +62,21 @@ for d in data:
     pred = conv_pred.predict(
         [0, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, 1, 1]
     )    
-    x = torch.rand((batch_size, in_channels, image_size, image_size), device=device, requires_grad=True, dtype=torch.float16)
+    pred_32 = conv_pred.predict(
+        [0, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, 1, 0]
+    )   
+    x = torch.rand((batch_size, in_channels, image_size, image_size), device=device, dtype=torch.float16)
     model = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False, device=device)
     def foo():
-        out = model(x)
+        with torch.autocast(device_type='cuda', dtype=torch.float16):
+            out = model(x)
             # loss = out.sum()
         # with amp.scale_loss(loss, optim, delay_overflow_check=True) as scaled_loss:
             # scaled_loss.backward()
         # optim.step()
     # with torch.autocast(device_type='cuda', dtype=torch.float16):
     with torch.autocast(device_type='cuda', dtype=torch.float16):
-        for _ in range(warm_up):
-            foo()
-        torch.cuda.synchronize()
-
     # dur = timing(lambda: model(x), nitr)
         dur_tc = timing(foo, nitr)
     # print(batch_size, dur, dur_tc)
-    print(batch_size, dur, dur_tc, pred)
+    print(batch_size, dur, dur_tc, pred, pred_32)

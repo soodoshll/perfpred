@@ -17,7 +17,7 @@ import sys
 
 LINEAR_PATH = glob.glob("matmul_data_*.data")
 CONV2D_PATH_SQL = ["./habitat-data/conv2d/conv2d-RTX2080Ti-0.sqlite", "./habitat-data/conv2d/conv2d-RTX2080Ti-1.sqlite"]
-CONV2D_PATH =  glob.glob("./data/eco-13/conv_data_*.data") + glob.glob("./data/eco-18/conv_data_2080ti_fp16_*.data") + glob.glob("./data/conv_data_2080ti_fp16_*.data")
+CONV2D_PATH =  glob.glob("./data/eco-13/conv_data_*.data") + glob.glob("./data/eco-18/conv_data_2080ti_fp16_*.data") # + glob.glob("./data/conv_data_2080ti_fp16_*.data")
 MAXPOOL_PATH = glob.glob("maxpool_data_*.data")
 BATCHNORM_PATH = glob.glob("batchnorm_data_*.data")
 
@@ -282,7 +282,9 @@ class Conv2DPredictor(Predictor):
         self.train_set = self.original_train_set[:n]
 
     def load_data(self, filenames):
-        rows = []
+        # rows = []
+        rows_fp16 = []
+        rows_fp32 = []
         for fn in filenames:
             with open(fn, "rb") as f:
                 while 1:
@@ -294,6 +296,7 @@ class Conv2DPredictor(Predictor):
                                 dur_forward, dur_backward, dx, batch_size, kernel_size, image_size, in_channels, out_channels, stride, padding = obj
                             else:
                                 dur_forward, dur_backward, dx, use_fp16, batch_size, kernel_size, image_size, in_channels, out_channels, stride, padding = obj
+                            rows = rows_fp16 if use_fp16 else rows_fp32
                             rows.append(
                                 (0, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, 1, use_fp16, dur_forward)
                             )
@@ -303,6 +306,13 @@ class Conv2DPredictor(Predictor):
                             )
                     except (EOFError):
                         break
+        min_len = min(len(rows_fp16), len(rows_fp32))
+        # print(f"fp16: {len(rows_fp16)} | fp32: {len(rows_fp32)} | min len : {min_len}")
+        rows = rows_fp16[-min_len:] + rows_fp32[-min_len:]
+
+        # rows = rows_fp16
+
+        # print(len(rows))
         self.raw_dataset = torch.tensor(rows, dtype=torch.float32)
         # print("max bs:", torch.max(self.raw_dataset[:, 1]))
         # print("datasize:", len(self.raw_dataset))
@@ -321,8 +331,8 @@ class Conv2DPredictor(Predictor):
         self.avgs[-2] = 0
         self.stds[-2] = 1
 
-        self.avgs[-3] = 0
-        self.stds[-3] = 1
+        # self.avgs[-3] = 0
+        # self.stds[-3] = 1
         ####
 
         # print("avg:", self.avgs)
@@ -497,7 +507,7 @@ def train(args):
         model_name = "predictor_model_conv2d.th"
         conv_pred.train(model_name,
                         batch_size=512,
-                        num_epoch=100, 
+                        num_epoch=200, 
                         hooks=[])
     else:
         raise RuntimeError("Not supported")
