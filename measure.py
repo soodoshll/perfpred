@@ -16,14 +16,7 @@ import os
 from multiprocessing import Process
 # from matplotlib import pyplot as plt
 
-parser = argparse.ArgumentParser()
-parser.add_argument("op", choices=["conv2d", "mm", "batchnorm", "avgpool2d"])
-parser.add_argument("device", choices=['2070', '2080ti', 't4', 'v100'])
-parser.add_argument("--num_gpus", type=int, default=1)
-parser.add_argument("--use_fp16", action="store_true")
-parser.add_argument("--data_dir", type=str, default="./data/")
 
-args = parser.parse_args()
 
 # device = torch.device('cuda')
 torch.set_grad_enabled(True)
@@ -644,6 +637,15 @@ def mp_measure(func, device_type, num_gpus=4, *args, **kwargs):
             p.join()
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("op", choices=["conv2d", "mm", "batchnorm", "avgpool2d"])
+    parser.add_argument("device", choices=['2070', '2080ti', 't4', 'v100'])
+    parser.add_argument("--num_gpus", type=int, default=1)
+    parser.add_argument("--use_fp16", action="store_true")
+    parser.add_argument("--data_dir", type=str, default="./data/")
+
+    global args
+    args = parser.parse_args()
     # mp_measure(mp_measure_batchnorm, num_gpus=4)
     if args.op == "conv2d":
         mp_measure(mp_measure_conv, args.device, num_gpus=args.num_gpus, use_fp16=args.use_fp16)
