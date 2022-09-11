@@ -12,24 +12,23 @@ from functools import partial
 # from torchmetrics import MeanAbsolutePercentageError
 import glob, pickle
 import argparse
+import sys
 # from matplotlib import pyplot as plt
 
 LINEAR_PATH = glob.glob("matmul_data_*.data")
 CONV2D_PATH_SQL = ["./habitat-data/conv2d/conv2d-RTX2080Ti-0.sqlite", "./habitat-data/conv2d/conv2d-RTX2080Ti-1.sqlite"]
-# CONV2D_PATH = glob.glob("./data/conv_data_*.data")
-CONV2D_PATH =  glob.glob("./data/conv_data_2080ti_fp16_*.data") + glob.glob("./data/eco-18/conv_data_2080ti_fp16_*.data")
-# CONV2D_PATH = glob.glob("data_backup/conv_data_*.data")
+CONV2D_PATH =  glob.glob("./data/eco-13/conv_data_*.data") + glob.glob("./data/eco-18/conv_data_2080ti_fp16_*.data") + glob.glob("./data/conv_data_2080ti_fp16_*.data")
 MAXPOOL_PATH = glob.glob("maxpool_data_*.data")
 BATCHNORM_PATH = glob.glob("batchnorm_data_*.data")
 
-device = torch.device('cuda:3')
+device = torch.device('cuda')
 
 class PeriodicActivation(nn.Module):
     def forward(self, x):
         return x + (torch.sin(x)) 
 
 def make_mlp(device, input_dim, hidden_layers=[1024] * 6  , activation=nn.LeakyReLU):
-    print("model layers:", hidden_layers)
+    # print("model layers:", hidden_layers)
     layers = []
     last = input_dim
     for idx, h in enumerate(hidden_layers):
@@ -109,12 +108,13 @@ class Predictor(object):
         optim = torch.optim.Adam(
                 model.parameters(), 
                 lr=5e-4, 
-                weight_decay=1e-3
+                weight_decay=1e-4
                 )
-        
-        for epoch_idx in trange(num_epoch):
+        lowest_err = 9e9
+        for epoch_idx in range(num_epoch):
             for data in dataloader:
                 inputs = self.preprocess(data[:, :-1]).to(self.device)
+                # print(f"mem: {torch.cuda.memory_allocated() /1e6} MB")
                 labels = data[:, -1].to(self.device)
                 optim.zero_grad(set_to_none=True)
                 out = model(inputs)[:, 0]
@@ -125,12 +125,17 @@ class Predictor(object):
             if epoch_idx % 10 == 0:
                 for hook in hooks:
                     hook()
-                print(f"{epoch_idx} : {loss.detach().cpu().numpy() : .5f} | truth: {labels[0] :.2f}, pred: {out[0] :.2f}")
-                torch.save(
-                    {"model_state_dict" : model.state_dict(),
-                    "avg" : self.avgs,
-                    "std" : self.stds,
-                    }, model_path)
+                test_error = self.test_set_error()
+                # print(f"[{epoch_idx}/{num_epoch}] \t train: {loss.detach().cpu().numpy() : .5f} test: {test_error : .5f} | truth: {labels[0] :.2f}, pred: {out[0] :.2f}", file=sys.stderr)
+                print(f"[{epoch_idx}/{num_epoch}] \t train: {loss.detach().cpu().numpy() : .5f} test: {test_error : .5f} | truth: {labels[0] :.2f}, pred: {out[0] :.2f}", file=sys.stderr)
+                # early stop
+                if epoch_idx == 0 or test_error < lowest_err:
+                    lowest_err = test_error
+                    torch.save(
+                        {"model_state_dict" : model.state_dict(),
+                        "avg" : self.avgs,
+                        "std" : self.stds,
+                        }, model_path)
 
     def load_model(self, path):
         checkpoint = torch.load(path)
@@ -151,15 +156,18 @@ class Predictor(object):
         # print(len(self.test_set))
         dataloader = torch.utils.data.DataLoader(self.test_set, batch_size=batch_size, shuffle=True) 
         errors = []
-        for data in dataloader:
-            inputs = self.preprocess(data[:, :-1]).to(self.device)
-            labels = data[:, -1].to(self.device)
-            out = self.model(inputs)
-            pred = out[:, 0] * self.stds[-1] + self.avgs[-1]
-            truth = labels * self.stds[-1] + self.avgs[-1]
-            # print(pred[0], truth[0])
-            error = (pred - truth) / truth
-            errors.append(error)
+        # print(f"    mem: {torch.cuda.memory_allocated() /1e6} MB")
+        with torch.no_grad():
+            for data in dataloader:
+                # print(f"    mem: {torch.cuda.memory_allocated() /1e6} MB")
+                inputs = self.preprocess(data[:, :-1]).to(self.device)
+                labels = data[:, -1].to(self.device)
+                out = self.model(inputs)
+                pred = out[:, 0] * self.stds[-1] + self.avgs[-1]
+                truth = labels * self.stds[-1] + self.avgs[-1]
+                # print(pred[0], truth[0])
+                error = (pred - truth) / truth
+                errors.append(error)
         errors = torch.concat(errors)
         errors = errors.cpu().detach().numpy()
         if filename is not None:
@@ -265,7 +273,13 @@ class Conv2DPredictor(Predictor):
                 #   n_estimators = 200, seed = 123)
 
     def shrink_training_set(self, n):
-        self.train_set = self.train_set[:n]
+        # idx = torch.randperm(len(self.original_train_set))
+        # idx = idx[:n].numpy()
+        # print(idx.shape, type(idx[0]))
+        # print(self.original_train_set[idx[0]])
+        # print(type(self.original_train_set))
+        # self.train_set = [self.original_train_set[i] for i in idx]
+        self.train_set = self.original_train_set[:n]
 
     def load_data(self, filenames):
         rows = []
@@ -291,7 +305,7 @@ class Conv2DPredictor(Predictor):
                         break
         self.raw_dataset = torch.tensor(rows, dtype=torch.float32)
         # print("max bs:", torch.max(self.raw_dataset[:, 1]))
-        print("datasize:", len(self.raw_dataset))
+        # print("datasize:", len(self.raw_dataset))
 
         self.dataset = self.raw_dataset 
 
@@ -311,13 +325,15 @@ class Conv2DPredictor(Predictor):
         self.stds[-3] = 1
         ####
 
-        print("avg:", self.avgs)
-        print("std:", self.stds)  
+        # print("avg:", self.avgs)
+        # print("std:", self.stds)  
 
         train_set_size = int(self.dataset.shape[0] * 0.8)
         test_set_size = self.dataset.shape[0] - train_set_size
 
         self.train_set, self.test_set = torch.utils.data.random_split(self.dataset, [train_set_size, test_set_size]) 
+        # self.train_set = self.train_set[torch.randperm(len(self.train_set))]
+        self.original_train_set = self.train_set
 
     def preprocess(self, data):
         if not self.modulo:
@@ -464,7 +480,7 @@ class BatchNormPredictor(Predictor):
         self.train_set, self.test_set = torch.utils.data.random_split(self.dataset, [train_set_size, test_set_size]) 
 
 modulo = True
-def train():
+def train(args):
     # linear_pred = LinearPredictor()
     # linear_pred.load_data(LINEAR_PATH)
     # linear_pred.train('predictor_model_linear.th', 
@@ -472,22 +488,20 @@ def train():
     #                 num_epoch=80, 
     #                 hooks=[lambda : print("error on test set:", linear_pred.test_set_error())])
     # return
-    conv_pred = Conv2DPredictor(modulo, device=device)
-    # # conv_pred.load_data_mix(sql_filenames=CONV2D_PATH_SQL, py_filenames=CONV2D_PATH)
-    conv_pred.load_data(filenames=CONV2D_PATH)
-    # return
-    # plt.hist(conv_pred.raw_dataset[:,-1].numpy())
-    # plt.savefig("conv_data.png") 
-    
-    # n = 300_000
-    # conv_pred.shrink_training_set(n)
-    # model_name = "predictor_model_conv2d.th" if modulo else "predictor_model_conv2d_0.th"
-    model_name = "predictor_model_conv2d.th"
-    conv_pred.train(model_name,
-                    batch_size=512,
-                    num_epoch=300, 
-                    hooks=[lambda : print("error on test set:", conv_pred.test_set_error())])
-    error = conv_pred.test_set_error(filename="conv_error.png")
+
+    if args.op == 'conv2d':
+        conv_pred = Conv2DPredictor(modulo, device=device)
+        conv_pred.load_data(filenames=CONV2D_PATH)
+        print("train set size:", len(conv_pred.original_train_set))
+        
+        model_name = "predictor_model_conv2d.th"
+        conv_pred.train(model_name,
+                        batch_size=512,
+                        num_epoch=100, 
+                        hooks=[])
+    else:
+        raise RuntimeError("Not supported")
+    # error = conv_pred.test_set_error(filename="conv_error.png")
 
     # error = conv_pred.train_set_error()
     # maxpool_pred = MaxPoolingPredictor()
@@ -518,7 +532,10 @@ def load_model():
 
 if __name__ == '__main__':
     # load_model()
-    train()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("op", choices=["conv2d", "mm", "batchnorm", "avgpool2d"])
+    args = parser.parse_args()
+    train(args)
     # conv_pred = Conv2DPredictor()
     # conv_pred.load_model("predictor_model_conv2d.th")
     # conv_pred.load_data(CONV2D_PATH)
