@@ -1,3 +1,4 @@
+from re import I
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -175,12 +176,9 @@ def get_children_kernel_time2(event):
     return end - start
 
 class MatMulMeasure(object):
-    """
-    Forward and backward are the same for matmul
-    """
 
-    forward_op_kw = "aten::matmul"
-    backward_op_kw = "MmBackward0"
+    forward_op_kw = ["aten::linear"]
+    backward_op_kw = ["AddmmBackward0", "MmBackward0"]
 
     def __init__(self, n_range, m_range, k_range, device):
         self.n_range = n_range
@@ -191,25 +189,34 @@ class MatMulMeasure(object):
         self.device = device
     
     def get_inputs_generator(self):
+        bias = random.choice([True, False])
         n = random.randint(*self.n_range) 
         m = random.randint(*self.m_range)
         k = random.randint(*self.k_range)
-        self.params = (n, m, k)
+        self.params = (n, m, k, bias)
+        dtype = torch.float16 if self.use_fp16 else torch.float32
         def fun():
-            A = torch.empty((n, m), device=self.device, dtype=torch.float32, requires_grad=True)
-            B = torch.empty((m, k), device=self.device, dtype=torch.float32, requires_grad=True)
-            return A, B
+            x = torch.empty((n, m), device=self.device, dtype=dtype, requires_grad=True)
+            model = torch.nn.Linear(m, k, device=self.device, bias=bias)
+            return x, model
         return fun
     
     def get_measured_func(self):
         def fun(data):
-            self.tmp_durations = []
-            A = data[0]
-            B = data[1]
-            C = A.matmul(B).sum()
-            C.backward()
+            x = data[0]
+            model = data[1]
+            o = model(x).sum()
+            o.backward()
             torch.cuda.synchronize(self.device)
-        return fun
+        
+        def fun_fp16(data):
+            x = data[0]
+            model = data[1]
+            with torch.autocast(device_type='cuda', dtype=torch.float16):
+                o = model(x).sum()
+            self.scaler.scale(o).backward()
+            torch.cuda.synchronize(self.device)            
+        return fun_fp16 if self.use_fp16 else fun
 
     def get_analyze_func(self):
         def fun(info, prof):
@@ -219,19 +226,22 @@ class MatMulMeasure(object):
             if not 'data' in info.keys():
                 info['data'] = []
             for evt in events:
-                if evt.device_type == DeviceType.CPU and evt.name == self.forward_op_kw:
+                if evt.device_type == DeviceType.CPU and evt.name in self.forward_op_kw:
                     duration = get_children_kernel_time(evt) / 1e3
                     tmp_forward_durations.append(duration)
-                if evt.device_type == DeviceType.CPU and evt.name == self.backward_op_kw:
+                if evt.device_type == DeviceType.CPU and evt.name in self.backward_op_kw:
                     duration = get_children_kernel_time(evt) / 1e3
                     tmp_backward_durations.append(duration)
             dur_avg_forward = np.mean(tmp_forward_durations)
             dur_avg_backward = np.mean(tmp_backward_durations)
             # print(dur_avg_forward, dur_avg_backward)
-            info['data'].append((dur_avg_forward, dur_avg_backward) + self.params)      
+            info['data'].append((dur_avg_forward, dur_avg_backward, self.use_fp16) + self.params)      
         return fun
     
-    def run(self, step=1, filename='matmul_data'):
+    def run(self, step=1, use_fp16=False, filename='matmul_data'):
+        self.use_fp16 = use_fp16
+        if use_fp16:
+            self.scaler = torch.cuda.amp.GradScaler()
         with open(filename, 'ab+') as f:
             for _ in range(step):
                 success = False
@@ -316,7 +326,7 @@ class ConvMeasure(object):
                 info['data'] = []
             for evt in events:
                 if evt.device_type == DeviceType.CPU:
-                    duration = get_children_kernel_time(evt) / 1e3
+                    duration = evt.cuda_time_total / 1e3
                     if evt.name in self.backward_names:
                         # print(evt.name)
                         tmp_dur_backward.append(duration)
@@ -377,17 +387,30 @@ class BatchNormMeasure(object):
             out = out.sum()
             out.backward()
             torch.cuda.synchronize(self.device)
-        return func
+
+        def func_fp16(data):
+            A = data[0]
+            layer = data[1]
+            layer.train()
+            with torch.autocast(device_type='cuda', dtype=torch.float16):
+                out = layer(A)
+                out = out.sum()
+            self.scaler.scale(out).backward()
+            torch.cuda.synchronize(self.device)
+
+        return func_fp16 if self.use_fp16 else func
 
     def get_inputs_generator(self): 
         batch_size = random.randint(*self.batch_size_range)
         image_size = random.randint(*self.image_size_range)
         channels = random.randint(*self.channels_range)
         self.params = (batch_size, image_size, channels)
+        dtype = torch.float16 if self.use_fp16 else torch.float32
         def func(dx=True):
             self.dx = dx
-            A = torch.rand((batch_size, channels, image_size, image_size), device=self.device, requires_grad=dx)
+            A = torch.rand((batch_size, channels, image_size, image_size), device=self.device, requires_grad=dx, dtype=dtype)
             layer = torch.nn.BatchNorm2d(channels, device=self.device)
+            layer.train()
             return A, layer
         return func
 
@@ -411,10 +434,13 @@ class BatchNormMeasure(object):
             
             dur_avg_forward = np.mean(tmp_dur_forward)
             dur_avg_backward = np.mean(tmp_dur_backward)
-            info['data'].append((dur_avg_forward, dur_avg_backward) + self.params)      
+            info['data'].append((dur_avg_forward, dur_avg_backward, self.use_fp16) + self.params)      
         return func
 
-    def run(self, step=1, dx=True, filename='batchnorm_data'):
+    def run(self, step=1, dx=True, filename='batchnorm_data', use_fp16=False):
+        self.use_fp16 = use_fp16
+        if use_fp16:
+            self.scaler = torch.cuda.amp.GradScaler()
         with open(filename, 'ab+') as f:
             for _ in range(step):
                 success = False
@@ -454,8 +480,9 @@ class MaxPoolingMeasure(object):
         channels = random.randint(*self.channels_range)
         stride = random.randint(*self.stride_range)
         self.params = (batch_size, kernel_size, image_size, channels, stride)
+        dtype = torch.float16 if self.use_fp16 else torch.float32
         def func():
-            A = torch.rand((batch_size, channels, image_size, image_size), device=self.device, requires_grad=True)
+            A = torch.rand((batch_size, channels, image_size, image_size), device=self.device, requires_grad=True, dtype=dtype)
             layer = torch.nn.MaxPool2d(kernel_size, stride=stride)
             return A, layer
         return func
@@ -468,7 +495,18 @@ class MaxPoolingMeasure(object):
             out = out.sum()
             out.backward()
             torch.cuda.synchronize(self.device)
-        return func
+        
+        def func_fp16(data):
+            A = data[0]
+            layer = data[1]
+            layer.train()
+            with torch.autocast(device_type='cuda', dtype=torch.float16):
+                out = layer(A)
+                out = out.sum()
+            self.scaler.scale(out).backward()
+            torch.cuda.synchronize(self.device)
+
+        return func_fp16 if self.use_fp16 else func 
 
     def get_analyze_func(self):
         def func(info, prof):
@@ -488,10 +526,13 @@ class MaxPoolingMeasure(object):
                         tmp_dur_backward.append(duration)
             dur_avg_forward = np.mean(tmp_dur_forward)
             dur_avg_backward = np.mean(tmp_dur_backward)          
-            info['data'].append((dur_avg_forward, dur_avg_backward) + self.params)      
+            info['data'].append((dur_avg_forward, dur_avg_backward, self.use_fp16) + self.params)      
         return func 
 
-    def run(self, step=1, filename='maxpool_data'):
+    def run(self, step=1, filename='maxpool_data', use_fp16=False):
+        self.use_fp16 = use_fp16
+        if use_fp16:
+            self.scaler = torch.cuda.amp.GradScaler() 
         with open(filename, 'ab+') as f:
             for _ in tqdm(range(step)):
                 success = False
@@ -499,9 +540,12 @@ class MaxPoolingMeasure(object):
                     success = True
                     try:
                         ret = measure_op(partial(self.get_inputs_generator()), self.get_measured_func(), self.get_analyze_func(), device=self.device) 
-                    except RuntimeError:
-                        # print("oom")
-                        success = False
+                    except RuntimeError as e:
+                        if str(e).find('out of memory') >= 0:
+                            success = False
+                        else:
+                            # print(e)
+                            return
                 pickle.dump(ret['data'], f)
                 f.flush()    
 
@@ -565,26 +609,30 @@ def measure_data_collect(filename='data'):
     pool_fw, pool_bw = pool_measure.numpy()
     np.savez('pool_10000', pool_fw=pool_fw, pool_bw=pool_bw)
 
-def mp_measure_conv(gpu_id, device_type, use_fp16=False):
-    max_batch_size = 48 if device_type == "2070" else 64
+def _data_filename(data_dir, op, gpu_id, device_type, use_fp16):
+    filename = f"{op}_{device_type}_{'fp16_' if use_fp16 else ''}{gpu_id}.data"
+    filename = os.path.join(data_dir, filename)
+    return filename
+
+def mp_measure_conv(gpu_id, args):
+    max_batch_size = 48 if args.device == "2070" else 64
     conv_measure = ConvMeasure(
-        batch_size_range=(1, 64),
+        batch_size_range=(1, max_batch_size),
         image_size_range=(2, 224),
         in_channels_range=(3, 1024),
         out_channels_range=(16, 1024),
         kernel_size_range=(1, 7),
         stride_range=(1, 7),
         padding_range=(0, 3),
-        use_fp16=use_fp16,
+        use_fp16=args.use_fp16,
         device=torch.device(f'cuda:{gpu_id}')
     )
-    print(f"measuring conv, fp16 enabled={use_fp16}")
+    print(f"measuring conv, fp16 enabled={args.use_fp16}")
     # conv_measure.run(100_000, dx=True, use_fp16=use_fp16, filename=f'conv_data_{"fp16_"}{gpu_id}.data')
-    filename = f"conv_data_{device_type}_{'fp16_' if use_fp16 else ''}{gpu_id}.data"
-    filename = os.path.join(args.data_dir, filename)
-    conv_measure.run(100_000, dx=True, use_fp16=use_fp16, filename=filename)
+    filename = _data_filename(args.data_dir, "conv", gpu_id, args.device, args.use_fp16)
+    conv_measure.run(100_000, dx=True, use_fp16=args.use_fp16, filename=filename)
 
-def mp_measure_matmul(gpu_id, device_type):
+def mp_measure_matmul(gpu_id, args):
     matmul_measure = MatMulMeasure(
         n_range=(1, 1024),
         m_range=(1, 32768),
@@ -592,9 +640,10 @@ def mp_measure_matmul(gpu_id, device_type):
         device=torch.device(f'cuda:{gpu_id}')
     )
     print("measuring matmul")
-    matmul_measure.run(10_000, filename=f'matmul_data_{gpu_id}.data')
+    filename = _data_filename(args.data_dir, "matmul", gpu_id, args.device, args.use_fp16)
+    matmul_measure.run(10_000, use_fp16=args.use_fp16, filename=filename)
 
-def mp_measure_batchnorm(gpu_id, device_type):
+def mp_measure_batchnorm(gpu_id, args):
     batchnorm_measure = BatchNormMeasure(
         batch_size_range=(1, 64),
         image_size_range=(2, 224),
@@ -602,9 +651,10 @@ def mp_measure_batchnorm(gpu_id, device_type):
         device=torch.device(f'cuda:{gpu_id}')
     )
     print("measuring batchnorm")
-    batchnorm_measure.run(10_000, filename=f'batchnorm_data_{gpu_id}.data')
+    filename = _data_filename(args.data_dir, "batchnorm", gpu_id, args.device, args.use_fp16)
+    batchnorm_measure.run(10_000, use_fp16=args.use_fp16, filename=filename)
 
-def mp_measure_maxpool(gpu_id, device_type):
+def mp_measure_maxpool(gpu_id, args):
     pool_measure = MaxPoolingMeasure(
         batch_size_range=(1, 64),
         image_size_range=(2, 256),
@@ -614,23 +664,28 @@ def mp_measure_maxpool(gpu_id, device_type):
         device=torch.device(f'cuda:{gpu_id}')
     ) 
     print("measuring maxpool")
-    pool_measure.run(10_000, filename=f'maxpool_data_{gpu_id}.data')
+    filename = _data_filename(args.data_dir, "maxpool", gpu_id, args.device, args.use_fp16)
+    pool_measure.run(10_000, use_fp16=args.use_fp16, filename=filename)
 
-def mp_measure(func, device_type, num_gpus=4, *args, **kwargs):
-    if num_gpus == 1:
-        func(0, device_type, *args, **kwargs)
+def mp_measure(func, args):
+    """
+    fp16 training is not so stable and i don't know why
+    so just periodically restart them to avoid being blocked
+    and i can sleep well without manually checking if the program is still running
+    """
+    
+    if args.num_gpus == 1:
+        func(0, args)
     else:
-        processes = [Process(target=func, args=(gpu_id, device_type) + args, kwargs=kwargs) for gpu_id in range(num_gpus)]
+        processes = [Process(target=func, args=(gpu_id, args)) for gpu_id in range(args.num_gpus)]
         for p in processes:
             p.start()
         while True:
             for i in range(len(processes)):
-                processes[i].join(60)
-                if processes[i].is_alive():
-                   processes[i].terminate() 
-                   time.sleep(1)
-                processes[i] = Process(target=func, args=(i, device_type) + args, kwargs=kwargs)
-                processes[i].start()
+                if not processes[i].is_alive():
+                    print("retart process", i)
+                    processes[i] = Process(target=func, args=(i, args))
+                    processes[i].start()
             
 
         for p in processes:
@@ -638,17 +693,22 @@ def mp_measure(func, device_type, num_gpus=4, *args, **kwargs):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("op", choices=["conv2d", "mm", "batchnorm", "avgpool2d"])
+    parser.add_argument("op", choices=["conv2d", "mm", "batchnorm", "maxpool2d"])
     parser.add_argument("device", choices=['2070', '2080ti', 't4', 'v100'])
     parser.add_argument("--num_gpus", type=int, default=1)
     parser.add_argument("--use_fp16", action="store_true")
     parser.add_argument("--data_dir", type=str, default="./data/")
 
-    global args
     args = parser.parse_args()
     # mp_measure(mp_measure_batchnorm, num_gpus=4)
     if args.op == "conv2d":
-        mp_measure(mp_measure_conv, args.device, num_gpus=args.num_gpus, use_fp16=args.use_fp16)
+        mp_measure(mp_measure_conv, args)
+    elif args.op == "mm":
+        mp_measure(mp_measure_matmul, args)
+    elif args.op == "batchnorm":
+        mp_measure(mp_measure_batchnorm, args)
+    elif args.op == "maxpool2d":
+        mp_measure(mp_measure_maxpool, args)
     else:
         raise RuntimeError("Not supported")
 
