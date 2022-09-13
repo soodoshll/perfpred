@@ -42,8 +42,8 @@ data = load_data(["data/eco-18/conv_data_2080ti_fp16_0.data"])
 # batch_size = 32
 # in_channels = 64
 # image_size = 224
-warm_up = 10
-nitr = 3
+warm_up = 100
+nitr = 100
 
 # out_channels = 64
 # model = nn.Conv2d(in_channels, out_channels, 3, bias=False)
@@ -66,10 +66,10 @@ def analyze(prof):
 scaler = torch.cuda.amp.GradScaler()
 # for d in data:
 
-_, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, is_forward, use_fp16, dur = data[7]
+_, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, is_forward, use_fp16, dur = data[-7]
 # print(d)
 pred = conv_pred.predict(
-    [0, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, 0, 1]
+    [0, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, 1, 1]
 )    
 # pred += conv_pred.predict(
     # [0, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, 0, 1]
@@ -86,8 +86,8 @@ with profile(activities=[
             out = model(x)
             loss = out.sum()
         scaler.scale(loss).backward()
-        scaler.step(optim)
-        scaler.update()
+        # scaler.step(optim)
+        # scaler.update()
         # with amp.scale_loss(loss, optim, delay_overflow_check=True) as scaled_loss:
             # scaled_loss.backward()
         # optim.step()
@@ -95,7 +95,7 @@ with profile(activities=[
     # with torch.autocast(device_type='cuda', dtype=torch.float16):
     with torch.autocast(device_type='cuda', dtype=torch.float16):
     # dur = timing(lambda: model(x), nitr)
-        dur_tc = timing(foo, 4, nitr)
+        dur_tc = timing(foo, warm_up, nitr)
 # print(batch_size, dur, dur_tc)
 print(batch_size, dur, dur_tc, pred,)
 

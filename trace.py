@@ -7,6 +7,8 @@ import torchvision
 from resnet import ResNet18
 import re
 
+from utils import timing 
+
 device = torch.device('cuda')
 
 UNARY_COEFF = 1.50332785e-08 
@@ -35,19 +37,28 @@ def profile_model(func, nitr=20):
 class Tracer(object):
     def forward_hook(self, record):
         def fun(module, input, output):
-            # if isinstance(module, nn.Conv2d):
+            # print(module)
             if len(list(module.children())) == 0:
                 record.append(
-                    (1, module, [None if i is None else i.shape for i in input])
+                    (1, module, [None if i is None else i.shape for i in input], True)
                 )
         return fun
     
     def backward_hook(self, record):
         def fun(module, input, output):
             # if isinstance(module, nn.Conv2d):
+            dx = True
+            if isinstance(module, nn.Conv2d):
+                # print(len(input), len(output))
+                # print(input[0].shape)
+                # print(module)
+                # print(input[0].shape)
+                if input[0] is None:
+                    # print("first layer")
+                    dx = False
             if len(list(module.children())) == 0:
                 record.append(
-                    (0, module, [None if i is None else i.shape for i in input])
+                    (0, module, [None if i is None else i.shape for i in input], dx)
                 )
         return fun
     
@@ -185,7 +196,7 @@ class Tracer(object):
         conv_time = 0
         linear_time = 0
         pool_time = 0
-        for is_forward, module, _, dur in trace_with_dur:
+        for is_forward, module, _, _, dur in trace_with_dur:
             if isinstance(module, nn.Conv2d):
                 conv_time += dur
             if isinstance(module, nn.Linear):
@@ -199,13 +210,14 @@ class Tracer(object):
         # print(dur_counted, acc_grad, optim_dur)
         # print((dur_counted + acc_grad + optim_dur) / 1e3, np.mean(step_time) / 1e3)
 
-        # print(conv_time/1e3, linear_time/1e3, pool_time/1e3, acc_grad/1e3 + optim_dur/1e3)
+        # print("Tracing:", conv_time/1e3, linear_time/1e3, pool_time/1e3, acc_grad/1e3 + optim_dur/1e3)
         # return trace_with_dur, acc_grad, optim_dur, np.mean(step_time) / 1e3
         return np.mean(step_time) / 1e3, np.mean(all_kernel_time)/1e3 , unmarked_event, trace_with_dur
         # return conv_time / 1e3
 
-model = build_vgg_model(bias=False)
+model = build_vgg_model(bias=True)
 # model = ResNet18()
+# model = torchvision.models.resnet18()
 model.to(device)
 loss_fn = nn.CrossEntropyLoss()
 optim = torch.optim.SGD(model.parameters(), lr=1e-3)
@@ -222,40 +234,52 @@ maxpool_pred.load_model("./model/predictor_model_maxpool.th")
 batchnorm_pred = BatchNormPredictor()
 batchnorm_pred.load_model("./model/predictor_model_batchnorm.th")
 
+use_fp16 = True
+
 def predict_using_trace(model, trace):
     tot_time = 0
     conv_time = 0
     linear_time = 0
     pool_time = 0
     dur_list = []
-    for is_forward, module, input_shapes in trace:
+    for is_forward, module, input_shapes, dx in trace:
         pred = None
         if isinstance(module, nn.Conv2d):
             input_shape = input_shapes[0]
             if input_shape == None:
-                for f, m, shape in trace:
+                for f, m, shape, _ in trace:
                     if m == module and f:
                         input_shape = shape[0]
             pred = conv_pred.predict(
-                [0, input_shape[0], input_shape[2], input_shape[1], module.out_channels, module.kernel_size[0], module.stride[0], module.padding[0], is_forward]
+                [0, input_shape[0], input_shape[2], input_shape[1], module.out_channels, module.kernel_size[0], module.stride[0], module.padding[0], is_forward, use_fp16]
             ) 
+            if not dx:
+                pred /= 2
+            # print([0, input_shape[0], input_shape[2], input_shape[1], module.out_channels, module.kernel_size[0], module.stride[0], module.padding[0], is_forward, use_fp16])
             if module.bias is not None:
-                pred += 1.50332785e-08 * (input_shape[0] * ((input_shape[2] / module.stride[0]) ** 2) * module.out_channels)
+                bias_pred = 1.50332785e-08 * (input_shape[0] * ((input_shape[2] / module.stride[0]) ** 2) * module.out_channels)
+                if use_fp16:
+                    bias_pred /= 2
+            pred += bias_pred
             conv_time += pred
             tot_time += pred
         if isinstance(module, nn.Linear):
             input_shape = input_shapes[0]
             pred = linear_pred.predict(
-                [input_shape[0], input_shape[1], module.out_features, is_forward]
+                [module.bias is not None, input_shape[0], input_shape[1], module.out_features, is_forward, use_fp16]
             )
-            if module.bias is not None:
-                pred += UNARY_COEFF * input_shape[0] * module.out_features
+            if not dx:
+                pred /= 2
+            # if module.bias is not None:
+                # bias_pred = UNARY_COEFF * input_shape[0] * module.out_features
+                # if use_fp16:
+                #    bias_pred /= 2 
             linear_time += pred
             tot_time += pred
         if isinstance(module, nn.MaxPool2d):
             input_shape = input_shapes[0]
             pred = maxpool_pred.predict(
-                [input_shape[0], module.kernel_size, input_shape[2], input_shape[1], module.stride, is_forward]
+                [input_shape[0], module.kernel_size, input_shape[2], input_shape[1], module.stride, is_forward, use_fp16]
             )
             pool_time += pred
             tot_time += pred
@@ -270,7 +294,7 @@ def predict_using_trace(model, trace):
         if isinstance(module, nn.BatchNorm2d):
             input_shape = input_shapes[0]
             pred = batchnorm_pred.predict(
-                [input_shape[0], input_shape[2], input_shape[1], is_forward]
+                [input_shape[0], input_shape[2], input_shape[1], is_forward, use_fp16]
             )
             tot_time += pred
         dur_list.append(pred)
@@ -280,38 +304,55 @@ def predict_using_trace(model, trace):
     for param in model.parameters():
         param_size += np.prod(param.size())
     optim_time = (1.50332785e-08 + 2.19720769e-08) * param_size 
+    if use_fp16:
+        optim_time /= 2
     tot_time += optim_time
 
-    # print(conv_time, linear_time, pool_time, optim_time)
+    # print("Predict:", conv_time, linear_time, pool_time, optim_time)
     return tot_time, dur_list
     # return conv_time
 
-def trace_func():
-    out = model(inputs)
-    optim.zero_grad(set_to_none=True)
-    loss = loss_fn(out, labels)
-    loss.backward()
-    optim.step()
-    torch.cuda.synchronize()
-    del out
+scaler = torch.cuda.amp.GradScaler()
 
-for batch_size in range(16, 17):
+for batch_size in range(1, 65):
     tracer = Tracer()
     inputs = torch.rand([batch_size, 3, 224, 224], device=device)
     labels = torch.randint(1000 - 1, (batch_size, ), device=device)
+
+    def trace_func():
+        optim.zero_grad(set_to_none=True)
+        with torch.autocast(device_type='cuda', dtype=torch.float16):
+            out = model(inputs)
+            loss = loss_fn(out, labels)
+        scaler.scale(loss).backward()
+        scaler.step(optim)
+        scaler.update()
+        torch.cuda.synchronize()
+        del out
+
+
+    dur_measure = timing(trace_func, 3, 3)
+
     trace = tracer.trace(trace_func)
-    # print(trace)
     pred, pred_dur = predict_using_trace(model, trace)
 
     events = profile_model(trace_func)
     truth, truth_kernel_time, unmarked_events, trace_with_dur = tracer.match_trace_and_events(trace, events)
 
     for evt in unmarked_events:
-        pred += BINARY_COEFF * np.prod(evt.input_shapes[0])
+        # print(evt.name)
+        t = BINARY_COEFF * np.prod(evt.input_shapes[0])
+        if use_fp16:
+            t /= 2
+        pred += t
 
-    print(f"{batch_size}, {pred}, {truth_kernel_time}, {truth}")
-    for t_item, pred_module_dur in zip(trace_with_dur, pred_dur):
-        is_forward, module, _, dur = t_item
-        if isinstance(module, nn.Conv2d):
-            print(f'{is_forward}, {str(type(module))[25:-2]}, {pred_module_dur}, {dur/1e3}')
+    print(f"{batch_size}, {pred}, {truth_kernel_time}, {dur_measure}")
+    # for t_item, pred_module_dur in zip(trace_with_dur, pred_dur):
+        # is_forward, module, _, _, dur = t_item
+        # if isinstance(module, nn.Conv2d):
+            # print(f'{is_forward}, {str(type(module))[25:-2]}, {pred_module_dur}, {dur/1e3}')
+        # if isinstance(module, nn.BatchNorm2d):
+    #         print(f'{is_forward}, {str(type(module))[25:-2]}, {pred_module_dur}, {dur/1e3}')      
+        # if isinstance(module, nn.Linear):
+            # print(f'{is_forward}, {str(type(module))[25:-2]}, {pred_module_dur}, {dur/1e3}')
     del inputs, labels, trace, events, tracer

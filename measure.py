@@ -137,7 +137,7 @@ def measure_op(inputs_generator, measured_func, analyze_func, device, use_fp16=F
     with torch.profiler.profile(
         schedule= torch.profiler.schedule(
             wait=1,
-            warmup=1,
+            warmup=3,
             active=nitr,
             repeat=1),
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
@@ -145,7 +145,7 @@ def measure_op(inputs_generator, measured_func, analyze_func, device, use_fp16=F
         record_shapes=True,
         on_trace_ready=functools.partial(analyze_func, info)
     ) as profiler:
-        for _ in range(nitr + 3):
+        for _ in range(nitr + 5):
             measured_func(data)
             profiler.step()
         torch.cuda.synchronize(device)
@@ -294,7 +294,7 @@ class ConvMeasure(object):
             self.dx = dx
             dtype = torch.float16 if self.use_fp16 else torch.float32
             A = torch.rand((batch_size, in_channels, image_size, image_size), device=self.device, requires_grad=dx, dtype=dtype)
-            layer = torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding=padding, device=self.device)
+            layer = torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding=padding, device=self.device, bias=False)
             return A, layer
         return func
     
@@ -302,6 +302,8 @@ class ConvMeasure(object):
         def func(data):
             A = data[0]
             layer = data[1]
+            # A.zero_grad(set_to_none=True)
+            # layer.zeo_grad(set_to_none=True)
             out = layer(A)
             out = out.sum()
             out.backward()
@@ -310,9 +312,12 @@ class ConvMeasure(object):
         def func_fp16(data):
             A = data[0]
             layer = data[1]
+            # A.zero_grad(set_to_none=True)
+            # layer.zeo_grad(set_to_none=True)
             with torch.autocast(device_type='cuda', dtype=torch.float16):
                 out = layer(A)
                 out = out.sum()
+                # out.backward()
             self.scaler.scale(out).backward()
             torch.cuda.synchronize(self.device)
         return func_fp16 if self.use_fp16 else func
