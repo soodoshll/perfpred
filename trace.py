@@ -6,6 +6,7 @@ from predictor import Conv2DPredictor, LinearPredictor, MaxPoolingPredictor, Bat
 import torchvision
 from resnet import ResNet18
 import re
+import argparse
 
 from utils import timing 
 
@@ -14,6 +15,10 @@ device = torch.device('cuda')
 UNARY_COEFF = 1.50332785e-08 
 BINARY_COEFF = UNARY_COEFF * 1.5
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--verbose", type=int, default=0)
+parser.add_argument("--model", choices=['resnet50', 'vgg'], default='vgg')
+args = parser.parse_args()
 
 def profile_model(func, nitr=20):
     torch.cuda.synchronize(device)
@@ -196,6 +201,8 @@ class Tracer(object):
         conv_time = 0
         linear_time = 0
         pool_time = 0
+        bn_time = 0
+        relu_time = 0
         for is_forward, module, _, _, dur in trace_with_dur:
             if isinstance(module, nn.Conv2d):
                 conv_time += dur
@@ -203,6 +210,10 @@ class Tracer(object):
                 linear_time += dur
             if isinstance(module, nn.MaxPool2d):
                 pool_time += dur
+            if isinstance(module, nn.BatchNorm2d):
+                bn_time += dur
+            if isinstance(module, nn.ReLU):
+                relu_time += dur
         # print
         acc_grad = np.sum(np.mean(acc_grad, axis=1))
         optim_dur = np.mean(optim_dur)
@@ -210,14 +221,72 @@ class Tracer(object):
         # print(dur_counted, acc_grad, optim_dur)
         # print((dur_counted + acc_grad + optim_dur) / 1e3, np.mean(step_time) / 1e3)
 
-        # print("Tracing:", conv_time/1e3, linear_time/1e3, pool_time/1e3, acc_grad/1e3 + optim_dur/1e3)
+        if args.verbose >= 1:
+            print("Tracing:", conv_time/1e3, linear_time/1e3, pool_time/1e3, bn_time/1e3, relu_time/1e3, acc_grad/1e3 + optim_dur/1e3)
         # return trace_with_dur, acc_grad, optim_dur, np.mean(step_time) / 1e3
         return np.mean(step_time) / 1e3, np.mean(all_kernel_time)/1e3 , unmarked_event, trace_with_dur
         # return conv_time / 1e3
 
-model = build_vgg_model(bias=True)
 # model = ResNet18()
-# model = torchvision.models.resnet18()
+
+def basicblock_revised_forward(self, x):
+    identity = x
+
+    out = self.conv1(x)
+    out = self.bn1(out)
+    out = self.relu(out)
+
+    out = self.conv2(out)
+    out = self.bn2(out)
+
+    if self.downsample is not None:
+        identity = self.downsample(x)
+
+    out = out + identity
+    out = self.relu(out)
+
+    return out
+
+def bottleneck_revised_forward(self, x):
+    identity = x
+
+    out = self.conv1(x)
+    out = self.bn1(out)
+    out = self.relu(out)
+
+    out = self.conv2(out)
+    out = self.bn2(out)
+    out = self.relu(out)
+
+    out = self.conv3(out)
+    out = self.bn3(out)
+
+    if self.downsample is not None:
+        identity = self.downsample(x)
+
+    out = out + identity
+    out = self.relu(out)
+
+    return out
+
+torchvision.models.resnet.BasicBlock.forward = basicblock_revised_forward
+torchvision.models.resnet.Bottleneck.forward = bottleneck_revised_forward
+
+if args.model == 'vgg':
+    model = build_vgg_model(bias=False)
+elif args.model == 'resnet50':
+    model = torchvision.models.resnet50()
+else:
+    raise RuntimeError("not supported")
+
+# print(model)
+def _change_inplace_to_false(module):
+    if hasattr(module, 'inplace'):
+        # print(module)
+        module.inplace = False
+
+model.apply(_change_inplace_to_false)
+
 model.to(device)
 loss_fn = nn.CrossEntropyLoss()
 optim = torch.optim.SGD(model.parameters(), lr=1e-3)
@@ -241,6 +310,8 @@ def predict_using_trace(model, trace):
     conv_time = 0
     linear_time = 0
     pool_time = 0
+    bn_time = 0
+    relu_time = 0
     dur_list = []
     for is_forward, module, input_shapes, dx in trace:
         pred = None
@@ -260,7 +331,7 @@ def predict_using_trace(model, trace):
                 bias_pred = 1.50332785e-08 * (input_shape[0] * ((input_shape[2] / module.stride[0]) ** 2) * module.out_channels)
                 if use_fp16:
                     bias_pred /= 2
-            pred += bias_pred
+                pred += bias_pred
             conv_time += pred
             tot_time += pred
         if isinstance(module, nn.Linear):
@@ -290,13 +361,17 @@ def predict_using_trace(model, trace):
                 pred = UNARY_COEFF * input_size
             else:
                 pred = BINARY_COEFF * input_size
+            if use_fp16:
+                pred /= 2
             tot_time += pred
+            relu_time += pred
         if isinstance(module, nn.BatchNorm2d):
             input_shape = input_shapes[0]
             pred = batchnorm_pred.predict(
                 [input_shape[0], input_shape[2], input_shape[1], is_forward, use_fp16]
             )
             tot_time += pred
+            bn_time += pred
         dur_list.append(pred)
     
     # optimizer
@@ -308,51 +383,72 @@ def predict_using_trace(model, trace):
         optim_time /= 2
     tot_time += optim_time
 
-    # print("Predict:", conv_time, linear_time, pool_time, optim_time)
+    if args.verbose >= 1:
+        print("Predict:", conv_time, linear_time, pool_time, bn_time, relu_time, optim_time)
     return tot_time, dur_list
     # return conv_time
 
 scaler = torch.cuda.amp.GradScaler()
 
-for batch_size in range(1, 65):
-    tracer = Tracer()
-    inputs = torch.rand([batch_size, 3, 224, 224], device=device)
-    labels = torch.randint(1000 - 1, (batch_size, ), device=device)
-
-    def trace_func():
-        optim.zero_grad(set_to_none=True)
-        with torch.autocast(device_type='cuda', dtype=torch.float16):
-            out = model(inputs)
-            loss = loss_fn(out, labels)
-        scaler.scale(loss).backward()
-        scaler.step(optim)
-        scaler.update()
-        torch.cuda.synchronize()
-        del out
-
-
-    dur_measure = timing(trace_func, 3, 3)
-
-    trace = tracer.trace(trace_func)
-    pred, pred_dur = predict_using_trace(model, trace)
-
-    events = profile_model(trace_func)
-    truth, truth_kernel_time, unmarked_events, trace_with_dur = tracer.match_trace_and_events(trace, events)
-
-    for evt in unmarked_events:
-        # print(evt.name)
-        t = BINARY_COEFF * np.prod(evt.input_shapes[0])
+for batch_size in [8 ,16 ,32]:
+    for use_fp16 in [False, True]:
         if use_fp16:
-            t /= 2
-        pred += t
+            scaler = torch.cuda.amp.GradScaler() 
+        tracer = Tracer()
+        inputs = torch.rand([batch_size, 3, 224, 224], device=device)
+        labels = torch.randint(1000 - 1, (batch_size, ), device=device)
 
-    print(f"{batch_size}, {pred}, {truth_kernel_time}, {dur_measure}")
-    # for t_item, pred_module_dur in zip(trace_with_dur, pred_dur):
-        # is_forward, module, _, _, dur = t_item
-        # if isinstance(module, nn.Conv2d):
-            # print(f'{is_forward}, {str(type(module))[25:-2]}, {pred_module_dur}, {dur/1e3}')
+        def trace_func():
+            optim.zero_grad(set_to_none=True)
+            if use_fp16:
+                with torch.autocast(device_type='cuda', dtype=torch.float16):
+                    out = model(inputs)
+                    loss = loss_fn(out, labels)
+                scaler.scale(loss).backward()
+                scaler.step(optim)
+                scaler.update()
+            else:
+                out = model(inputs)
+                loss = loss_fn(out, labels) 
+                loss.backward()
+                optim.step()
+            torch.cuda.synchronize()
+            del out
+
+
+        dur_measure = timing(trace_func, 3, 3)
+
+        trace = tracer.trace(trace_func)
+        pred, pred_dur = predict_using_trace(model, trace)
+
+        events = profile_model(trace_func)
+        truth, truth_kernel_time, unmarked_events, trace_with_dur = tracer.match_trace_and_events(trace, events)
+
+
+        unmarked_tot = 0
+        unmarked_pred = 0
+        for evt in unmarked_events:
+            t = BINARY_COEFF * np.prod(evt.input_shapes[0])
+            if use_fp16:
+                t /= 2
+            unmarked_pred += t
+            pred += t
+            unmarked_tot += evt.cuda_time_total
+        
+        # if verbo
+        # print(unmarked_pred, unmarked_tot / 1e3)
+            # print(evt.name, evt.cuda_time_total, t * 1e3)
+
+        print(f"{batch_size}, {use_fp16}, {pred}, {dur_measure}, {truth_kernel_time}")
+
+        if args.verbose >= 1:
+            for t_item, pred_module_dur in zip(trace_with_dur, pred_dur):
+                is_forward, module, _, _, dur = t_item
+                if isinstance(module, nn.Conv2d):
+                    # print(module)
+                    print(f'{is_forward}, {str(type(module))[25:-2]}, {pred_module_dur}, {dur/1e3}')
         # if isinstance(module, nn.BatchNorm2d):
     #         print(f'{is_forward}, {str(type(module))[25:-2]}, {pred_module_dur}, {dur/1e3}')      
         # if isinstance(module, nn.Linear):
             # print(f'{is_forward}, {str(type(module))[25:-2]}, {pred_module_dur}, {dur/1e3}')
-    del inputs, labels, trace, events, tracer
+        del inputs, labels, trace, events, tracer
