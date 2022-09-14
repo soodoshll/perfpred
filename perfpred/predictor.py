@@ -42,10 +42,6 @@ def make_mlp(device, input_dim, hidden_layers=[1024] * 8  , activation=nn.ReLU):
     model.to(device)    
     return model
 
-# class ConvPerfNet(nn.Module):
-#     def __init__(self):
-#         super(ConvPerfNet, self).__init__()
-
 def NormL1(output, target, inputs):
     bs = inputs[:, 1]
     image_size = inputs[:, 3]
@@ -55,35 +51,17 @@ def NormL1(output, target, inputs):
     stride = inputs[:, 7]
     is_forward = inputs[:, 9]
 
-    # c = bs * (image_size ** 2) * in_channels * out_channels * (kernel_size ** 2) / (stride **2) * (2 - is_forward)
-    # c = bs * (2 - is_forward)
     c = 1 / bs * (stride **2) / (kernel_size ** 2)
-    # c = 1 / bs
-    # c = 1 / bs * (stride **2) / (kernel_size ** 2) / in_channels / out_channels 
     target = target * c
     output = output * c
     return torch.mean(torch.abs(target - output))
 
 def MAPELoss(output, target, inputs=None):
-    #clip
     loss = torch.abs((target - output) / target)
-    # loss[output > target] *= 2
-    # output = 1 / output
-    # target = 1 / target
-    # loss = torch.abs((target - output) / target) 
-    # loss[loss > 0.1] = 0.1
-    
     return torch.mean(loss)    
 
 def LogLoss(output, target, inputs=None):
-    #clip
     loss = torch.abs(torch.log(target) - torch.log(output))
-    # loss[output > target] *= 2
-    # output = 1 / output
-    # target = 1 / target
-    # loss = torch.abs((target - output) / target) 
-    # loss[loss > 0.1] = 0.1
-    
     return torch.mean(loss)    
 
 class Predictor(object):

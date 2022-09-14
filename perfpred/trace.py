@@ -1,15 +1,32 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 import numpy as np
 import re
 
+from .measure import measure_unary_elementwise
 from .predictor import Conv2DPredictor, LinearPredictor, MaxPoolingPredictor, BatchNormPredictor
 
 UNARY_COEFF = 1.50332785e-08 
 BINARY_COEFF = UNARY_COEFF * 1.5
 
+def measure_simple_op():
+    global UNARY_COEFF, BINARY_COEFF
+    x_range = np.arange(200_000, 11_000_000, 200_000)
+    y = []
+    for n in x_range:
+        dur = measure_unary_elementwise(n, op=F.relu)
+        y.append(dur)
+    ret, _, _, _ = np.linalg.lstsq(
+        np.expand_dims(x_range, axis=1), 
+        np.array(y) )
+    UNARY_COEFF = ret
+    BINARY_COEFF = 1.5 * UNARY_COEFF 
 
-def profile_model(func, nitr=20, device='cuda'):
+print("Measuring Memory Bandwidth...")
+measure_simple_op()
+
+def profile_model(func, nitr=20, device='cuda:2'):
     torch.cuda.synchronize(device)
     with torch.profiler.profile(
         schedule= torch.profiler.schedule(
@@ -245,7 +262,7 @@ def predict_using_trace(model, trace, use_fp16=False, verbose=0):
                 pred /= 2
             # print([0, input_shape[0], input_shape[2], input_shape[1], module.out_channels, module.kernel_size[0], module.stride[0], module.padding[0], is_forward, use_fp16])
             if module.bias is not None:
-                bias_pred = 1.50332785e-08 * (input_shape[0] * ((input_shape[2] / module.stride[0]) ** 2) * module.out_channels)
+                bias_pred = UNARY_COEFF * (input_shape[0] * ((input_shape[2] / module.stride[0]) ** 2) * module.out_channels)
                 if use_fp16:
                     bias_pred /= 2
                 pred += bias_pred
@@ -295,14 +312,13 @@ def predict_using_trace(model, trace, use_fp16=False, verbose=0):
     param_size = 0
     for param in model.parameters():
         param_size += np.prod(param.size())
-    optim_time = (1.50332785e-08 + 2.19720769e-08) * param_size 
+    optim_time = (UNARY_COEFF + BINARY_COEFF) * param_size 
     if use_fp16:
         optim_time /= 2
     tot_time += optim_time
 
     if verbose >= 1:
         print("Predict:", conv_time, linear_time, pool_time, bn_time, relu_time, optim_time)
-
     
     return tot_time, dur_list
 

@@ -16,8 +16,40 @@ import os
 
 from multiprocessing import Process
 
+# device = torch.device('cuda')
 torch.set_grad_enabled(True)
 torch.backends.cudnn.benchmark = True
+
+def measure_binary_elementwise(n, device=torch.device('cuda'), op=torch.add, dry_run=10, nitr=20):
+    A = torch.rand((n, ), device=device, dtype=torch.float32)
+    B = torch.rand((n, ), device=device, dtype=torch.float32)
+    start_event = torch.cuda.Event(enable_timing=True)
+    end_event = torch.cuda.Event(enable_timing=True)
+    for _ in range(dry_run):
+        C = op(A, B)
+    torch.cuda.synchronize()
+    start_event.record()
+    for _ in range(nitr):
+        C = op(A, B)
+    end_event.record()
+    torch.cuda.synchronize()
+    dur = start_event.elapsed_time(end_event) / nitr
+    return dur
+
+def measure_unary_elementwise(n, device=torch.device('cuda'), op=F.relu, dry_run=10, nitr=20):
+    A = torch.rand((n, ), device=device, dtype=torch.float32)
+    start_event = torch.cuda.Event(enable_timing=True)
+    end_event = torch.cuda.Event(enable_timing=True)
+    for _ in range(dry_run):
+        C = op(A) 
+    torch.cuda.synchronize()
+    start_event.record()
+    for _ in range(nitr):
+        C = op(A) 
+    end_event.record()
+    torch.cuda.synchronize()
+    dur = start_event.elapsed_time(end_event) / nitr
+    return dur
 
 def measure_op(inputs_generator, measured_func, analyze_func, device, use_fp16=False, nitr=3):
     data = inputs_generator()
