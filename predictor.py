@@ -28,7 +28,7 @@ class PeriodicActivation(nn.Module):
     def forward(self, x):
         return x + (torch.sin(x)) 
 
-def make_mlp(device, input_dim, hidden_layers=[1024] * 6  , activation=nn.LeakyReLU):
+def make_mlp(device, input_dim, hidden_layers=[1024] * 8  , activation=nn.ReLU):
     # print("model layers:", hidden_layers)
     layers = []
     last = input_dim
@@ -76,6 +76,17 @@ def MAPELoss(output, target, inputs=None):
     
     return torch.mean(loss)    
 
+def LogLoss(output, target, inputs=None):
+    #clip
+    loss = torch.abs(torch.log(target) - torch.log(output))
+    # loss[output > target] *= 2
+    # output = 1 / output
+    # target = 1 / target
+    # loss = torch.abs((target - output) / target) 
+    # loss[loss > 0.1] = 0.1
+    
+    return torch.mean(loss)    
+
 class Predictor(object):
     def load_data_sql(self, paths):
         rows = []
@@ -105,11 +116,11 @@ class Predictor(object):
         model.train()
         dataloader = torch.utils.data.DataLoader(self.train_set, batch_size=batch_size, shuffle=True, num_workers=8)
         
-        loss_fn = MAPELoss 
+        loss_fn = LogLoss 
         optim = torch.optim.Adam(
                 model.parameters(), 
                 lr=5e-4, 
-                weight_decay=1e-4
+                # weight_decay=1e-4
                 )
         lowest_err = 9e9
         for epoch_idx in range(num_epoch):
@@ -274,7 +285,7 @@ class Conv2DPredictor(Predictor):
         self.device = device
         self.modulo = modulo
         if modulo:
-            self.model = make_mlp(device, len(self.feature_name) + 16 + 64 + 128 + 4)
+            self.model = make_mlp(device, len(self.feature_name) + 16 + 64 + 128 + 4 + 7 + 7)
         else:
             self.model = make_mlp(device, len(self.feature_name))
 
@@ -294,6 +305,7 @@ class Conv2DPredictor(Predictor):
         # rows = []
         rows_fp16 = []
         rows_fp32 = []
+        cnt = 0
         for fn in filenames:
             with open(fn, "rb") as f:
                 while 1:
@@ -305,6 +317,13 @@ class Conv2DPredictor(Predictor):
                                 dur_forward, dur_backward, dx, batch_size, kernel_size, image_size, in_channels, out_channels, stride, padding = obj
                             else:
                                 dur_forward, dur_backward, dx, use_fp16, batch_size, kernel_size, image_size, in_channels, out_channels, stride, padding = obj
+                            if 5 * dur_forward < dur_backward:
+                                # print("eliminate outliners")
+                                continue
+                            # if kernel_size == 7 or kernel_size == 6:
+                                # cnt += 1
+                            # else:
+                                # continue
                             rows = rows_fp16 if use_fp16 else rows_fp32
                             rows.append(
                                 (0, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, 1, use_fp16, dur_forward)
@@ -315,6 +334,7 @@ class Conv2DPredictor(Predictor):
                             )
                     except (EOFError):
                         break
+        print(cnt)
         min_len = min(len(rows_fp16), len(rows_fp32))
         # print(f"fp16: {len(rows_fp16)} | fp32: {len(rows_fp32)} | min len : {min_len}")
         rows = rows_fp16[-min_len:] + rows_fp32[-min_len:]
@@ -362,11 +382,15 @@ class Conv2DPredictor(Predictor):
             in_channels = data[:, 3].type(torch.int64)
             out_channels = data[:, 4].type(torch.int64)
             image_size = data[:, 2].type(torch.int64)
+            kernel_size = data[:, 5].type(torch.int64)
+            stride = data[:, 6].type(torch.int64)
         else:
             batchsize = data[1].type(torch.int64) 
             in_channels = data[3].type(torch.int64)
             out_channels = data[4].type(torch.int64)        
             image_size = data[2].type(torch.int64)
+            kernel_size = data[5].type(torch.int64)
+            stride = data[6].type(torch.int64)
 
         batchsize_mod = batchsize % 16
         batchsize_mod = nn.functional.one_hot(batchsize_mod, 16)
@@ -378,12 +402,18 @@ class Conv2DPredictor(Predictor):
         in_channels_mod = nn.functional.one_hot(in_channels_mod, 64)
         out_channels_mod = nn.functional.one_hot(out_channels_mod, 128)
         image_size_mod = nn.functional.one_hot(image_size_mod, 4)
+
+        kernel_one_hot = nn.functional.one_hot(kernel_size - 1, 7)
+        stride_one_hot = nn.functional.one_hot(stride - 1, 7)
         data = (data - self.avgs[:-1]) / self.stds[:-1]
+        
         inputs = torch.concat((data, 
             batchsize_mod.type(torch.float32),
             in_channels_mod.type(torch.float32),
             out_channels_mod.type(torch.float32),
-            image_size_mod.type(torch.float32)
+            image_size_mod.type(torch.float32),
+            kernel_one_hot.type(torch.float32),
+            stride_one_hot.type(torch.float32)
             ), axis=-1)
         # print(inputs.shape)
         return inputs
