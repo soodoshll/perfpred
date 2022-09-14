@@ -229,8 +229,8 @@ class LinearPredictor(Predictor):
         self.avgs[-1] = 0
         self.stds[-1] = 1
 
-        # self.avgs[-2] = 0
-        # self.stds[-2] = 1
+        self.avgs[-2] = 0
+        self.stds[-2] = 1
 
         self.dataset = self.raw_dataset
         print("avg:", self.avgs)
@@ -357,8 +357,8 @@ class Conv2DPredictor(Predictor):
         self.avgs[0]= 0
         self.stds[0] = 1
 
-        # self.avgs[-2] = 0
-        # self.stds[-2] = 1
+        self.avgs[-2] = 0
+        self.stds[-2] = 1
 
         # self.avgs[-3] = 0
         # self.stds[-3] = 1
@@ -481,6 +481,8 @@ class MaxPoolingPredictor(Predictor):
         self.avgs[-1] = 0
         self.stds[-1] = 1
 
+        self.avgs[-2] = 0
+        self.stds[-2] = 1
         print("avg:", self.avgs)
         print("std:", self.stds)  
 
@@ -530,7 +532,9 @@ class BatchNormPredictor(Predictor):
 
         self.avgs[-1] = 0
         self.stds[-1] = 1
-
+ 
+        self.avgs[-2] = 0
+        self.stds[-2] = 1
         print("avg:", self.avgs)
         print("std:", self.stds)  
 
