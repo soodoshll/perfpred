@@ -1,7 +1,8 @@
 import torch
-from predictor import Conv2DPredictor
+from perfpred.predictor import Conv2DPredictor
 from torch import nn
 from torch.profiler import profile, record_function, ProfilerActivity
+from perfpred.utils import timing
 
 torch.backends.cudnn.benchmark = True
 # linear_pred, conv_pred, maxpool_pred = load_model()
@@ -11,7 +12,6 @@ conv_pred.load_model("./model/predictor_model_conv2d.th")
 device = torch.device('cuda')
 
 # scaler = torch.cuda.amp.GradScaler()
-from utils import timing
 
 image_size = 224
 in_channels = 64
