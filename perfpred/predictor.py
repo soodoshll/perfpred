@@ -17,8 +17,7 @@ import sys
 
 LINEAR_PATH = glob.glob("./data/matmul_*.data")
 CONV2D_PATH_SQL = ["./habitat-data/conv2d/conv2d-RTX2080Ti-0.sqlite", "./habitat-data/conv2d/conv2d-RTX2080Ti-1.sqlite"]
-CONV2D_PATH =  glob.glob("./data/eco-13/conv_data_*.data") + glob.glob("./data/eco-18/conv_data_2080ti_fp16_*.data") 
- # + glob.glob("./data/conv_data_2080ti_fp16_*.data")
+CONV2D_PATH =  glob.glob("./data/conv_*.data")
 MAXPOOL_PATH = glob.glob("./data/maxpool_*.data")
 BATCHNORM_PATH = glob.glob("./data/batchnorm_*.data")
 
