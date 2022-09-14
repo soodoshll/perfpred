@@ -8,6 +8,8 @@ from utils import timing
 
 from predictor import Conv2DPredictor
 
+torch.backends.cudnn.benchmark = True
+
 device = "cuda"
 
 parser = argparse.ArgumentParser()
@@ -62,7 +64,7 @@ def change_one_dim(
     return np.array([param_range, dur_list, pred_list])
 
 if args.command == 'measure':
-    default = [16, 224, 64, 64, 3, 1, 1]
+    default = [16, 224, 64, 64, 7, 1, 3]
     bs_data = change_one_dim(
         default,
         'batch_size',
@@ -72,13 +74,13 @@ if args.command == 'measure':
     oc_data = change_one_dim(
         default,
         'out_channels',
-        range(4, 515, 4),
+        range(4, 385, 4),
     )
 
     ic_data = change_one_dim(
         default,
         'in_channels',
-        range(4, 515, 4),
+        range(4, 385, 4),
     )
 
 
@@ -93,24 +95,25 @@ elif args.command == 'plot':
     plt.subplot(311)
     plt.xlabel("batch size")
     plt.ylabel("time (ms)")
-    plt.plot(bs_data[0], bs_data[1])
+    plt.plot(bs_data[0], bs_data[1], label='truth')
     if args.pred:
-        plt.plot(bs_data[0], bs_data[2])
+        plt.plot(bs_data[0], bs_data[2], label='pred')
 
     plt.subplot(312)
     plt.xlabel("number of output channels")
     plt.ylabel("time (ms)")
-    plt.plot(oc_data[0], oc_data[1])
+    plt.plot(oc_data[0], oc_data[1], label='truth')
     if args.pred:
-        plt.plot(oc_data[0], oc_data[2])
+        plt.plot(oc_data[0], oc_data[2], label='pred')
 
     plt.subplot(313)
     plt.xlabel("number of in channels")
     plt.ylabel("time (ms)")
-    plt.plot(ic_data[0], ic_data[1])
+    plt.plot(ic_data[0], ic_data[1], label='truth')
     if args.pred:
-        plt.plot(ic_data[0], ic_data[2])
+        plt.plot(ic_data[0], ic_data[2], label='pred')
     
     plt.subplots_adjust(hspace=0.6)
+    plt.legend()
  
     plt.savefig(f"./figure/gpu_noncontinuous{'_fp16' if args.use_fp16 else ''}{'_nomodulo' if args.nomodulo else ''}{'_pred' if args.pred else ''}.png")
