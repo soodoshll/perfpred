@@ -32,7 +32,7 @@ loss_fn = nn.CrossEntropyLoss()
 optim = torch.optim.SGD(model.parameters(), lr=1e-3)
 fp16_options = [False, True] if args.use_fp16 else [False]
 for batch_size in args.batch_size:
-    for use_fp16 in [False, True]:
+    for use_fp16 in fp16_options:
         if use_fp16:
             scaler = torch.cuda.amp.GradScaler() 
         inputs = torch.rand([batch_size, 3, 224, 224], device=device)
