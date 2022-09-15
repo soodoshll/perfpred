@@ -4,9 +4,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from utils import timing
+from perfpred.utils import timing
 
-from predictor import Conv2DPredictor
+from perfpred.predictor import Conv2DPredictor
 
 torch.backends.cudnn.benchmark = True
 
