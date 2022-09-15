@@ -327,7 +327,7 @@ def predict(model, trace_func, use_fp16=False, verbose=0):
     trace = tracer.trace(trace_func)
     pred, pred_dur = predict_using_trace(model, trace, use_fp16, verbose)
     events = profile_model(trace_func)
-    truth, truth_kernel_time, unmarked_events, trace_with_dur = tracer.match_trace_and_events(trace, events)
+    truth, truth_kernel_time, unmarked_events, trace_with_dur = tracer.match_trace_and_events(trace, events, verbose=verbose)
     for evt in unmarked_events:
         t = BINARY_COEFF * np.prod(evt.input_shapes[0])
         if use_fp16:
