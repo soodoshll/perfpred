@@ -38,6 +38,7 @@ def make_mlp(device, input_dim, hidden_layers=[1024] * 8  , activation=nn.ReLU):
         layers.append(activation())
         last = h
     layers.append(nn.Linear(last, 1))
+    layers.append(nn.ReLU())
     model = nn.Sequential(*layers)
     model.to(device)    
     return model
