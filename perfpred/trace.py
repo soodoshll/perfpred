@@ -19,8 +19,8 @@ def measure_simple_op():
         y.append(dur)
     ret, _, _, _ = np.linalg.lstsq(
         np.expand_dims(x_range, axis=1), 
-        np.array(y) )
-    UNARY_COEFF = ret
+        np.array(y), rcond=-1)
+    UNARY_COEFF = ret[0]
     BINARY_COEFF = 1.5 * UNARY_COEFF 
 
 print("Measuring Memory Bandwidth...")
