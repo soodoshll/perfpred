@@ -2,7 +2,6 @@ from inspect import ArgSpec
 import torch
 from torch import nn 
 import time
-from vgg import build_vgg_model
 # from apex import amp 
 import pickle
 import torchvision
