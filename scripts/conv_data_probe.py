@@ -18,9 +18,6 @@ args = parser.parse_args()
 
 torch.backends.cudnn.benchmark = True
 # linear_pred, conv_pred, maxpool_pred = load_model()
-conv_pred = Conv2DPredictor(True)
-conv_pred.load_model("./model/predictor_model_conv2d.th")
-
 from perfpred.utils import timing
 
 device = torch.device('cuda')
@@ -70,12 +67,7 @@ for i in range(n):
     d = data[idx]
     dur_fw, dur_bw, _, use_fp16, batch_size, kernel_size, image_size, in_channels, out_channels, stride, padding = d
     # print(d)
-    pred_fw = conv_pred.predict(
-        [0, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, 1, 0]
-    )    
-    pred_bw = conv_pred.predict(
-        [0, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, 0, 0]
-    )    
+
     x = torch.rand((batch_size, in_channels, image_size, image_size), device=device, requires_grad=True)
     model = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False, device=device)
     # model(x)
