@@ -14,6 +14,7 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument("filename", type=str)
+parser.add_argument("--use_fp16", action="store_true")
 args = parser.parse_args()
 
 torch.backends.cudnn.benchmark = True
@@ -60,6 +61,9 @@ n = 20
 
 err_fw_list = []
 err_bw_list = []
+
+dtype = torch.float16 if args.use_fp16 else torch.float32
+
 for i in range(n):
     idx = random.randint(0, len(data)-1)
     while data[idx][5] != 7 :
@@ -68,7 +72,7 @@ for i in range(n):
     dur_fw, dur_bw, _, use_fp16, batch_size, kernel_size, image_size, in_channels, out_channels, stride, padding = d
     # print(d)
 
-    x = torch.rand((batch_size, in_channels, image_size, image_size), device=device, requires_grad=True)
+    x = torch.rand((batch_size, in_channels, image_size, image_size), device=device, requires_grad=True, dtype=dtype)
     model = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False, device=device)
     # model(x)
     fw_measure = []
@@ -84,10 +88,10 @@ for i in range(n):
     def foo():
         torch.cuda.synchronize()
         optim.zero_grad(set_to_none=True)
-        # with torch.autocast(device_type='cuda', dtype=torch.float16):
-        out = model(x)
-        loss = out.sum()
-        loss.backward()
+        with torch.autocast(device_type='cuda', dtype=dtype):
+            out = model(x)
+            loss = out.sum()
+            loss.backward()
         # scaler.scale(loss).backward()
         # scaler.step(optim)
         # scaler.update()
@@ -99,9 +103,9 @@ for i in range(n):
         foo()
     with profile(activities=[
         ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, on_trace_ready=analyze) as prof:
-        # with torch.autocast(device_type='cuda', dtype=torch.float16):
+        with torch.autocast(device_type='cuda', dtype=dtype):
         # dur = timing(lambda: model(x), nitr)
-        dur_tc = timing(foo, warm_up, nitr)
+            dur_tc = timing(foo, warm_up, nitr)
     # print(batch_size, dur, dur_tc)
     truth_fw = np.mean(fw_measure) 
     truth_bw = np.mean(bw_measure)
