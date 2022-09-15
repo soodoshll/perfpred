@@ -312,7 +312,7 @@ def predict_using_trace(model, trace, use_fp16=False, verbose=0):
     param_size = 0
     for param in model.parameters():
         param_size += np.prod(param.size())
-    optim_time = (UNARY_COEFF + BINARY_COEFF) * param_size 
+    optim_time = BINARY_COEFF * param_size 
     if use_fp16:
         optim_time /= 2
     tot_time += optim_time
