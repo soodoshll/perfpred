@@ -32,6 +32,7 @@ model.to(device)
 loss_fn = nn.CrossEntropyLoss()
 optim = torch.optim.SGD(model.parameters(), lr=1e-3)
 fp16_options = [False, True] if args.use_fp16 else [False]
+first = True
 for batch_size in args.batch_size:
     for use_fp16 in fp16_options:
         if use_fp16:
@@ -56,8 +57,14 @@ for batch_size in args.batch_size:
             torch.cuda.synchronize()
             del out
 
+        if first:
+            # warmup
+            for _ in range(1000):
+                trace_func()
+            torch.cuda.synchronize()
+            first = False
 
-        dur_measure = timing(trace_func, 1_000, 100, verbose=1)
+        dur_measure = timing(trace_func, 100, 100, verbose=1)
         pred, _, truth_kernel_time, trace_with_dur, pred_dur = \
             predict(model, trace_func, use_fp16=use_fp16, verbose=args.verbose)
         print(f"{batch_size}, {use_fp16}, {pred}, {dur_measure}, {truth_kernel_time}")
