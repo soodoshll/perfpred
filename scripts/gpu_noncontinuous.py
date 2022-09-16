@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 
 from tqdm import tqdm, trange
+import time
 
 from perfpred.utils import timing
 
@@ -74,7 +75,8 @@ if args.command == 'measure':
     model = torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, device=device)
     for _ in trange(warmup):
         model(x)
-    torch.cuda.synchronize()
+        torch.cuda.synchronize()
+        time.sleep(0.01)
 
     bs_data = change_one_dim(
         default,

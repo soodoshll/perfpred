@@ -69,6 +69,7 @@ def measure_op(inputs_generator, measured_func, analyze_func, device, use_fp16=F
         for _ in range(nitr + 5):
             measured_func(data)
             profiler.step()
+            time.sleep(0.01)
         torch.cuda.synchronize(device)
     return info
 
@@ -284,7 +285,7 @@ class ConvMeasure(object):
                         # torch.cuda.empty_cache()
                 pickle.dump(ret['data'], f)
                 f.flush()
-                time.sleep(0.5)
+                time.sleep(0.1)
 
     def numpy(self):
         return np.array(self.record_forward) #, np.array(self.record_dw), np.array(self.record_dwdx)

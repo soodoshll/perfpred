@@ -68,3 +68,14 @@ def torch_vision_model_revise():
 def change_inplace_to_false(module):
     if hasattr(module, 'inplace'):
         module.inplace = False
+
+def warmup(device):
+    default = [32, 224, 64, 64, 3, 1, 1]
+    batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding = default
+    print("warm up")
+    warmup = 10_000
+    x = torch.rand(batch_size, in_channels, image_size, image_size, device=device)
+    model = torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, device=device)
+    for _ in trange(warmup):
+        model(x)
+    torch.cuda.synchronize(device)
