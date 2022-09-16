@@ -609,10 +609,14 @@ def mp_measure(func, args):
             p.start()
         while True:
             for i in range(len(processes)):
-                if not processes[i].is_alive():
-                    print("retart process", i)
-                    processes[i] = Process(target=func, args=(i, args))
-                    processes[i].start()
+                processes[i].join(60)
+                if processes[i].is_alive():
+                    processes[i].terminate()
+                    processes[i].join()
+                # if not processes[i].is_alive():
+                print("retart process", i)
+                processes[i] = Process(target=func, args=(i, args))
+                processes[i].start()
             
 
         for p in processes:

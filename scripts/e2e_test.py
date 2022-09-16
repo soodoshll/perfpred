@@ -15,6 +15,7 @@ parser.add_argument("--verbose", type=int, default=0)
 parser.add_argument("--model", choices=['resnet50', 'vgg'], default='vgg')
 parser.add_argument("--batch_size", nargs='+', type=int, default=[8, 16, 32])
 parser.add_argument("--use_fp16", action="store_true")
+parser.add_argument("--nomodulo", action="store_true")
 args = parser.parse_args()
 
 print(args)
@@ -32,7 +33,7 @@ loss_fn = nn.CrossEntropyLoss()
 optim = torch.optim.SGD(model.parameters(), lr=1e-3)
 fp16_options = [False, True] if args.use_fp16 else [False]
 for batch_size in args.batch_size:
-    for use_fp16 in [False, True]:
+    for use_fp16 in fp16_options:
         if use_fp16:
             scaler = torch.cuda.amp.GradScaler() 
         inputs = torch.rand([batch_size, 3, 224, 224], device=device)
@@ -56,7 +57,7 @@ for batch_size in args.batch_size:
             del out
 
 
-        dur_measure = timing(trace_func, 3, 3)
+        dur_measure = timing(trace_func, 1_000, 100, verbose=1)
         pred, _, truth_kernel_time, trace_with_dur, pred_dur = \
             predict(model, trace_func, use_fp16=use_fp16, verbose=args.verbose)
         print(f"{batch_size}, {use_fp16}, {pred}, {dur_measure}, {truth_kernel_time}")

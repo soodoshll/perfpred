@@ -1,9 +1,15 @@
 import torch
 import torchvision
+from tqdm import trange
 
-def timing(func, warmup=3, nitr=20):
-    for _ in range(warmup):
-        func()
+def timing(func, warmup=3, nitr=20, verbose=0):
+    if verbose >= 1:
+        print("warmup...")
+        for _ in trange(warmup):
+            func()
+    else:
+        for _ in range(warmup):
+            func()
     torch.cuda.synchronize()
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)

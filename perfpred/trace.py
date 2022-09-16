@@ -19,8 +19,8 @@ def measure_simple_op():
         y.append(dur)
     ret, _, _, _ = np.linalg.lstsq(
         np.expand_dims(x_range, axis=1), 
-        np.array(y) )
-    UNARY_COEFF = ret
+        np.array(y), rcond=-1)
+    UNARY_COEFF = ret[0]
     BINARY_COEFF = 1.5 * UNARY_COEFF 
 
 print("Measuring Memory Bandwidth...")
@@ -312,7 +312,7 @@ def predict_using_trace(model, trace, use_fp16=False, verbose=0):
     param_size = 0
     for param in model.parameters():
         param_size += np.prod(param.size())
-    optim_time = (UNARY_COEFF + BINARY_COEFF) * param_size 
+    optim_time = BINARY_COEFF * param_size 
     if use_fp16:
         optim_time /= 2
     tot_time += optim_time
@@ -327,7 +327,7 @@ def predict(model, trace_func, use_fp16=False, verbose=0):
     trace = tracer.trace(trace_func)
     pred, pred_dur = predict_using_trace(model, trace, use_fp16, verbose)
     events = profile_model(trace_func)
-    truth, truth_kernel_time, unmarked_events, trace_with_dur = tracer.match_trace_and_events(trace, events)
+    truth, truth_kernel_time, unmarked_events, trace_with_dur = tracer.match_trace_and_events(trace, events, verbose=verbose)
     for evt in unmarked_events:
         t = BINARY_COEFF * np.prod(evt.input_shapes[0])
         if use_fp16:

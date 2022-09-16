@@ -2,11 +2,13 @@ import torch
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-from tqdm import tqdm
+import matplotlib.ticker as mtick
 
-from utils import timing
+from tqdm import tqdm, trange
 
-from predictor import Conv2DPredictor
+from perfpred.utils import timing
+
+from perfpred.predictor import Conv2DPredictor
 
 torch.backends.cudnn.benchmark = True
 
@@ -64,7 +66,16 @@ def change_one_dim(
     return np.array([param_range, dur_list, pred_list])
 
 if args.command == 'measure':
-    default = [16, 224, 64, 64, 7, 1, 3]
+    default = [32, 224, 64, 64, 3, 1, 1]
+    batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding = default
+    print("warm up")
+    warmup = 10_000
+    x = torch.rand(batch_size, in_channels, image_size, image_size, device=device)
+    model = torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, device=device)
+    for _ in trange(warmup):
+        model(x)
+    torch.cuda.synchronize()
+
     bs_data = change_one_dim(
         default,
         'batch_size',
@@ -83,37 +94,48 @@ if args.command == 'measure':
         range(4, 385, 4),
     )
 
-
     np.savez(log_path, change_batch_size=bs_data, change_out_channels=oc_data, change_in_channels=ic_data)
+
 elif args.command == 'plot':
     data = np.load(log_path)
     bs_data = data['change_batch_size']
     oc_data = data['change_out_channels']
     ic_data = data['change_in_channels']
 
-    plt.figure()
-    plt.subplot(311)
-    plt.xlabel("batch size")
-    plt.ylabel("time (ms)")
-    plt.plot(bs_data[0], bs_data[1], label='truth')
-    if args.pred:
-        plt.plot(bs_data[0], bs_data[2], label='pred')
+    def draw(ax, data, name):
+        ax.set_xlabel(name)
+        ax.set_ylabel("time (ms)")
+        ax.plot(data[0], data[1], label='truth')
+        if args.pred:
+            ax.plot(data[0], data[2], label='pred')
+        ax2 = ax.twinx()
+        err = (data[2] - data[1]) / data[1]
+        ax2.plot(data[0], err, 'k--', label="error")
+        ax2.grid()
+        # vals = ax2.get_yticks()
+        # ax2.set_yticklabels(['{:,.0%}'.format(x) for x in vals])
+        ax2.yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
 
-    plt.subplot(312)
-    plt.xlabel("number of output channels")
-    plt.ylabel("time (ms)")
-    plt.plot(oc_data[0], oc_data[1], label='truth')
-    if args.pred:
-        plt.plot(oc_data[0], oc_data[2], label='pred')
+    figure, axes = plt.subplots(nrows=3, ncols=1, figsize=[8, 8])
+    draw(axes[0], bs_data, "batch size")
+    draw(axes[1], oc_data, "num of output channels")
+    draw(axes[2], ic_data, "num of input channels")
 
-    plt.subplot(313)
-    plt.xlabel("number of in channels")
-    plt.ylabel("time (ms)")
-    plt.plot(ic_data[0], ic_data[1], label='truth')
-    if args.pred:
-        plt.plot(ic_data[0], ic_data[2], label='pred')
+    # plt.subplot(312)
+    # plt.xlabel("number of output channels")
+    # plt.ylabel("time (ms)")
+    # plt.plot(oc_data[0], oc_data[1], label='truth')
+    # if args.pred:
+    #     plt.plot(oc_data[0], oc_data[2], label='pred')
+
+    # plt.subplot(313)
+    # plt.xlabel("number of in channels")
+    # plt.ylabel("time (ms)")
+    # plt.plot(ic_data[0], ic_data[1], label='truth')
+    # if args.pred:
+    #     plt.plot(ic_data[0], ic_data[2], label='pred')
     
     plt.subplots_adjust(hspace=0.6)
-    plt.legend()
+    axes[0].legend()
  
     plt.savefig(f"./figure/gpu_noncontinuous{'_fp16' if args.use_fp16 else ''}{'_nomodulo' if args.nomodulo else ''}{'_pred' if args.pred else ''}.png")
