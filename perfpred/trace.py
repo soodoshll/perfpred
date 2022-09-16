@@ -26,7 +26,7 @@ def measure_simple_op():
 print("Measuring Memory Bandwidth...")
 measure_simple_op()
 
-def profile_model(func, nitr=20, device='cuda:2'):
+def profile_model(func, nitr=20, device='cuda'):
     torch.cuda.synchronize(device)
     with torch.profiler.profile(
         schedule= torch.profiler.schedule(
