@@ -17,7 +17,7 @@ import sys
 
 LINEAR_PATH = glob.glob("./data/matmul_*.data")
 CONV2D_PATH_SQL = ["./habitat-data/conv2d/conv2d-RTX2080Ti-0.sqlite", "./habitat-data/conv2d/conv2d-RTX2080Ti-1.sqlite"]
-CONV2D_PATH =  glob.glob("./data/conv_*.data")
+CONV2D_PATH = glob.glob("./data/eco-*/conv_*.data")
 MAXPOOL_PATH = glob.glob("./data/maxpool_*.data")
 BATCHNORM_PATH = glob.glob("./data/batchnorm_*.data")
 
@@ -263,7 +263,7 @@ class Conv2DPredictor(Predictor):
         self.device = device
         self.modulo = modulo
         if modulo:
-            self.model = make_mlp(device, len(self.feature_name) + 16 + 64 + 128 + 4 + 7 + 7)
+            self.model = make_mlp(device, len(self.feature_name) + 16 + 4 + 128 + 4 + 7 + 7)
         else:
             self.model = make_mlp(device, len(self.feature_name))
 
@@ -373,11 +373,11 @@ class Conv2DPredictor(Predictor):
         batchsize_mod = batchsize % 16
         batchsize_mod = nn.functional.one_hot(batchsize_mod, 16)
 
-        in_channels_mod = (in_channels) % 64
+        in_channels_mod = (in_channels) % 4
         out_channels_mod = (out_channels) % 128
         image_size_mod = image_size % 4
 
-        in_channels_mod = nn.functional.one_hot(in_channels_mod, 64)
+        in_channels_mod = nn.functional.one_hot(in_channels_mod, 4)
         out_channels_mod = nn.functional.one_hot(out_channels_mod, 128)
         image_size_mod = nn.functional.one_hot(image_size_mod, 4)
 
