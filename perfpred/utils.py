@@ -1,6 +1,8 @@
 import torch
 import torchvision
 from tqdm import trange
+import time
+import subprocess
 
 def timing(func, warmup=3, nitr=20, verbose=0):
     if verbose >= 1:
@@ -19,6 +21,21 @@ def timing(func, warmup=3, nitr=20, verbose=0):
     end.record()
     torch.cuda.synchronize()
     return start.elapsed_time(end) / nitr
+
+def timing_cpu(func, warmup=3, nitr=20, verbose=0):
+    if verbose >= 1:
+        print("warmup...")
+        for _ in trange(warmup):
+            func()
+    else:
+        for _ in range(warmup):
+            func()
+    torch.cuda.synchronize()
+    start = time.time()
+    for _ in range(nitr):
+        func()
+    torch.cuda.synchronize()
+    return (time.time() - start) / nitr * 1e3 
 
 def torch_vision_model_revise():
     def _basicblock_revised_forward(self, x):
@@ -79,3 +96,11 @@ def warmup(device):
     for _ in trange(warmup):
         model(x)
     torch.cuda.synchronize(device)
+
+def get_clock():
+    out = subprocess.run("nvidia-smi -q -d CLOCK -i 0", capture_output=True, shell=True)
+    for line in out.stdout.split(b'\n'):
+        if line.strip().startswith(b'SM'):
+            clock = (int(line.split()[-2]))
+            break
+    return clock
