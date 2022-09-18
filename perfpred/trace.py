@@ -6,6 +6,7 @@ import re
 
 from .measure import measure_unary_elementwise
 from .predictor import Conv2DPredictor, LinearPredictor, MaxPoolingPredictor, BatchNormPredictor
+# from .utils import get_clock
 
 UNARY_COEFF = 1.50332785e-08 
 BINARY_COEFF = UNARY_COEFF * 1.5
@@ -35,7 +36,7 @@ def profile_model(func, nitr=20, device='cuda'):
             active=nitr,
             repeat=1),
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
-        with_stack=True,
+        # with_stack=True,
         # with_modules=True,
         record_shapes=True,
     ) as profiler:
@@ -158,6 +159,7 @@ class Tracer(object):
                         matching_name = matching_names[tuple_ptr] if is_tuple else matching_names
                         if re.match(matching_name, c.name) is not None:
                             kernel_time = self._get_children_kernel_time(c, marked_kernel)
+                            # kernel_time = c.cuda_time_total
                             if tuple_ptr > 0:
                                 dur_dict[ptr][-1] += kernel_time
                             else:
@@ -322,7 +324,11 @@ def predict_using_trace(model, trace, use_fp16=False, verbose=0):
     
     return tot_time, dur_list
 
-def predict(model, trace_func, use_fp16=False, verbose=0):
+def predict(model, trace_func, use_fp16=False, verbose=0, dry_run=5):
+    # dry run
+    for _ in range(dry_run):
+        trace_func()
+    torch.cuda.synchronize()
     tracer = Tracer()
     trace = tracer.trace(trace_func)
     pred, pred_dur = predict_using_trace(model, trace, use_fp16, verbose)

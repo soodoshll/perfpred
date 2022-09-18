@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 
 from tqdm import tqdm, trange
+import time
 
 from perfpred.utils import timing
 
@@ -69,12 +70,13 @@ if args.command == 'measure':
     default = [32, 224, 64, 64, 3, 1, 1]
     batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding = default
     print("warm up")
-    warmup = 10_000
+    warmup = 1_000
     x = torch.rand(batch_size, in_channels, image_size, image_size, device=device)
     model = torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, device=device)
     for _ in trange(warmup):
         model(x)
-    torch.cuda.synchronize()
+        torch.cuda.synchronize()
+        time.sleep(0.01)
 
     bs_data = change_one_dim(
         default,

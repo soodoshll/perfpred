@@ -69,6 +69,7 @@ def measure_op(inputs_generator, measured_func, analyze_func, device, use_fp16=F
         for _ in range(nitr + 5):
             measured_func(data)
             profiler.step()
+            time.sleep(cooldown)
         torch.cuda.synchronize(device)
     return info
 
@@ -284,7 +285,7 @@ class ConvMeasure(object):
                         # torch.cuda.empty_cache()
                 pickle.dump(ret['data'], f)
                 f.flush()
-                time.sleep(0.5)
+                # time.sleep(0.1)
 
     def numpy(self):
         return np.array(self.record_forward) #, np.array(self.record_dw), np.array(self.record_dwdx)
@@ -629,8 +630,11 @@ if __name__ == '__main__':
     parser.add_argument("--num_gpus", type=int, default=1)
     parser.add_argument("--use_fp16", action="store_true")
     parser.add_argument("--data_dir", type=str, default="./data/")
+    parser.add_argument("--cooldown", type=float, default=0)
 
     args = parser.parse_args()
+    cooldown = args.cooldown
+
     # mp_measure(mp_measure_batchnorm, num_gpus=4)
     if args.op == "conv2d":
         mp_measure(mp_measure_conv, args)
