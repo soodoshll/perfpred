@@ -17,7 +17,7 @@ import sys
 
 LINEAR_PATH = glob.glob("./data/matmul_*.data")
 CONV2D_PATH_SQL = ["./habitat-data/conv2d/conv2d-RTX2080Ti-0.sqlite", "./habitat-data/conv2d/conv2d-RTX2080Ti-1.sqlite"]
-CONV2D_PATH = glob.glob("./data/eco-13/conv_*.data")
+CONV2D_PATH = glob.glob("./data/eco-1*/conv_*.data")
 MAXPOOL_PATH = glob.glob("./data/maxpool_*.data")
 BATCHNORM_PATH = glob.glob("./data/batchnorm_*.data")
 
@@ -26,6 +26,10 @@ device = torch.device('cuda')
 class PeriodicActivation(nn.Module):
     def forward(self, x):
         return x + (torch.sin(x)) 
+
+class AbsLayer(nn.Module):
+    def forward(self, x):
+        return torch.exp(x)
 
 def make_mlp(device, input_dim, hidden_layers=[1024] * 8  , activation=nn.ReLU):
     # print("model layers:", hidden_layers)
@@ -38,7 +42,7 @@ def make_mlp(device, input_dim, hidden_layers=[1024] * 8  , activation=nn.ReLU):
         layers.append(activation())
         last = h
     layers.append(nn.Linear(last, 1))
-    layers.append(nn.ReLU())
+    # layers.append(AbsLayer())
     model = nn.Sequential(*layers)
     model.to(device)    
     return model
@@ -94,7 +98,7 @@ class Predictor(object):
         model.train()
         dataloader = torch.utils.data.DataLoader(self.train_set, batch_size=batch_size, shuffle=True, num_workers=8)
         
-        loss_fn = LogLoss 
+        loss_fn = MAPELoss 
         optim = torch.optim.Adam(
                 model.parameters(), 
                 lr=5e-4, 
@@ -263,7 +267,7 @@ class Conv2DPredictor(Predictor):
         self.device = device
         self.modulo = modulo
         if modulo:
-            self.model = make_mlp(device, len(self.feature_name) + 16 + 4 + 128 + 4 + 7 + 7)
+            self.model = make_mlp(device, len(self.feature_name) + 4 + 4 + 128 + 8 + 7 + 7)
         else:
             self.model = make_mlp(device, len(self.feature_name))
 
@@ -370,14 +374,14 @@ class Conv2DPredictor(Predictor):
             kernel_size = data[5].type(torch.int64)
             stride = data[6].type(torch.int64)
 
-        batchsize_mod = batchsize % 16
-        batchsize_mod = nn.functional.one_hot(batchsize_mod, 16)
+        batchsize_mod = batchsize % 4
+        batchsize_mod = nn.functional.one_hot(batchsize_mod, 4)
 
-        in_channels_mod = (in_channels) % 4
+        in_channels_mod = (in_channels) % 8
         out_channels_mod = (out_channels) % 128
         image_size_mod = image_size % 4
 
-        in_channels_mod = nn.functional.one_hot(in_channels_mod, 4)
+        in_channels_mod = nn.functional.one_hot(in_channels_mod, 8)
         out_channels_mod = nn.functional.one_hot(out_channels_mod, 128)
         image_size_mod = nn.functional.one_hot(image_size_mod, 4)
 
