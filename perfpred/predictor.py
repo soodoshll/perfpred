@@ -17,7 +17,7 @@ import sys
 
 LINEAR_PATH = glob.glob("./data/matmul_*.data")
 CONV2D_PATH_SQL = ["./habitat-data/conv2d/conv2d-RTX2080Ti-0.sqlite", "./habitat-data/conv2d/conv2d-RTX2080Ti-1.sqlite"]
-CONV2D_PATH = glob.glob("./data/eco-1*/conv_*.data")
+CONV2D_PATH = glob.glob("./data/conv_*.data")
 MAXPOOL_PATH = glob.glob("./data/maxpool_*.data")
 BATCHNORM_PATH = glob.glob("./data/batchnorm_*.data")
 
@@ -31,18 +31,19 @@ class AbsLayer(nn.Module):
     def forward(self, x):
         return torch.exp(x)
 
+class ExpLayer(nn.Module):
+    def forward(self, x):
+        return torch.exp(x) 
+
 def make_mlp(device, input_dim, hidden_layers=[1024] * 8  , activation=nn.ReLU):
-    # print("model layers:", hidden_layers)
     layers = []
     last = input_dim
     for idx, h in enumerate(hidden_layers):
         layers.append(nn.Linear(last, h))
-        # if len(hidden_layers) - idx <= 2:
-            # layers.append(nn.Dropout())
         layers.append(activation())
         last = h
     layers.append(nn.Linear(last, 1))
-    # layers.append(AbsLayer())
+    # layers.append(ExpLayer())
     model = nn.Sequential(*layers)
     model.to(device)    
     return model
@@ -65,9 +66,14 @@ def MAPELoss(output, target, inputs=None):
     loss = torch.abs((target - output) / target)
     return torch.mean(loss)    
 
-def LogLoss(output, target, inputs=None):
-    loss = torch.abs(torch.log(target) - torch.log(output))
-    return torch.mean(loss)    
+def LogMSELoss(output, target, inputs=None):
+    loss = torch.log(target) - output
+    loss = (loss * loss)
+    return torch.mean(loss)
+
+def ExpLoss(output, target, inputs=None):
+    loss = torch.abs(torch.exp(output/target) - torch.e)
+    return torch.mean(loss)
 
 class Predictor(object):
     def load_data_sql(self, paths):
@@ -98,11 +104,11 @@ class Predictor(object):
         model.train()
         dataloader = torch.utils.data.DataLoader(self.train_set, batch_size=batch_size, shuffle=True, num_workers=8)
         
-        loss_fn = MAPELoss 
+        loss_fn = LogMSELoss
         optim = torch.optim.Adam(
                 model.parameters(), 
                 lr=5e-4, 
-                # weight_decay=1e-4
+                weight_decay=1e-5
                 )
         lowest_err = 9e9
         for epoch_idx in range(num_epoch):
@@ -120,8 +126,7 @@ class Predictor(object):
                 for hook in hooks:
                     hook()
                 test_error = self.test_set_error()
-                # print(f"[{epoch_idx}/{num_epoch}] \t train: {loss.detach().cpu().numpy() : .5f} test: {test_error : .5f} | truth: {labels[0] :.2f}, pred: {out[0] :.2f}", file=sys.stderr)
-                print(f"[{epoch_idx}/{num_epoch}] \t train: {loss.detach().cpu().numpy() : .5f} test: {test_error : .5f} | truth: {labels[0] :.2f}, pred: {out[0] :.2f}", file=sys.stderr)
+                print(f"[{epoch_idx}/{num_epoch}] \t train: {loss.detach().cpu().numpy() : .5f} test: {test_error : .5f} | truth: {labels[0] :.2f}, pred: {torch.exp(out[0]) :.2f}", file=sys.stderr)
                 # early stop
                 if epoch_idx == 0 or test_error < lowest_err:
                     lowest_err = test_error
@@ -144,6 +149,7 @@ class Predictor(object):
         inputs = self.preprocess(inputs)
         out = self.model(inputs)
         out = out[0] * self.stds[-1] + self.avgs[-1]
+        out = torch.exp(out)
         return out.detach().numpy()
 
     def test_set_error(self, batch_size=1000, filename=None):
@@ -158,16 +164,16 @@ class Predictor(object):
                 labels = data[:, -1].to(self.device)
                 out = self.model(inputs)
                 pred = out[:, 0] * self.stds[-1] + self.avgs[-1]
+                pred = torch.exp(pred)
                 truth = labels * self.stds[-1] + self.avgs[-1]
                 # print(pred[0], truth[0])
                 error = (pred - truth) / truth
                 errors.append(error)
         errors = torch.concat(errors)
         errors = errors.cpu().detach().numpy()
-        if filename is not None:
-            plt.hist(errors, bins=100)
-            plt.savefig(filename)
-        # print(sum(errors > 1) / len(errors))
+        # if filename is not None:
+        #     plt.hist(errors, bins=100)
+        #     plt.savefig(filename)
 
         return np.mean(np.abs(errors))
 
@@ -267,7 +273,7 @@ class Conv2DPredictor(Predictor):
         self.device = device
         self.modulo = modulo
         if modulo:
-            self.model = make_mlp(device, len(self.feature_name) + 4 + 4 + 128 + 8 + 7 + 7)
+            self.model = make_mlp(device, len(self.feature_name) + 32 + 4 + 64 + 64 + 7 + 7)
         else:
             self.model = make_mlp(device, len(self.feature_name))
 
@@ -374,15 +380,15 @@ class Conv2DPredictor(Predictor):
             kernel_size = data[5].type(torch.int64)
             stride = data[6].type(torch.int64)
 
-        batchsize_mod = batchsize % 4
-        batchsize_mod = nn.functional.one_hot(batchsize_mod, 4)
+        batchsize_mod = batchsize % 32
+        batchsize_mod = nn.functional.one_hot(batchsize_mod, 32)
 
-        in_channels_mod = (in_channels) % 8
-        out_channels_mod = (out_channels) % 128
+        in_channels_mod = (in_channels) % 64
+        out_channels_mod = (out_channels) % 64
         image_size_mod = image_size % 4
 
-        in_channels_mod = nn.functional.one_hot(in_channels_mod, 8)
-        out_channels_mod = nn.functional.one_hot(out_channels_mod, 128)
+        in_channels_mod = nn.functional.one_hot(in_channels_mod, 64)
+        out_channels_mod = nn.functional.one_hot(out_channels_mod, 64)
         image_size_mod = nn.functional.one_hot(image_size_mod, 4)
 
         kernel_one_hot = nn.functional.one_hot(kernel_size - 1, 7)
@@ -541,7 +547,7 @@ def train(args):
         model_name = f"./model/predictor_model_conv2d{'_nomodulo' if not modulo else ''}.th"
         conv_pred.train(model_name,
                         batch_size=512,
-                        num_epoch=200, 
+                        num_epoch=300, 
                         hooks=[])
     elif args.op == "mm":
         linear_pred = LinearPredictor(device=device)
@@ -594,7 +600,7 @@ def load_model():
     linear_pred.load_model("./model/predictor_model_linear.th")
 
     conv_pred = Conv2DPredictor(modulo=modulo)
-    conv_pred.load_model("predictor_model_conv2d.th")
+    conv_pred.load_model("./model/predictor_model_conv2d.th")
 
     maxpool_pred = MaxPoolingPredictor() 
     maxpool_pred.load_model("./model/predictor_model_maxpool.th")

@@ -48,13 +48,14 @@ fp16_options = [False, True] if args.use_fp16 else [False]
 first = True
 data = []
 # warmup(device)
+image_size = 224
 for batch_size in args.batch_size:
     data_bs = []
     data.append(data_bs)
     for use_fp16 in fp16_options:
         if use_fp16:
             scaler = torch.cuda.amp.GradScaler() 
-        inputs = torch.rand([batch_size, 3, 224, 224], device=device)
+        inputs = torch.rand([batch_size, 3, image_size, image_size], device=device)
         labels = torch.randint(1000 - 1, (batch_size, ), device=device)
 
         def trace_func():

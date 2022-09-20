@@ -55,6 +55,12 @@ def change_one_dim(
                 dur = timing(lambda : layer(x))
         else:
             dur = timing(lambda : layer(x)) 
+        
+        ###
+        if param_name == 'batch_size' and v == 16:
+            print(dur)
+        ###
+
         if args.pred:
             pred_list.append(
                 conv_pred.predict(
@@ -67,16 +73,16 @@ def change_one_dim(
     return np.array([param_range, dur_list, pred_list])
 
 if args.command == 'measure':
-    default = [32, 224, 64, 64, 3, 1, 1]
+    default = [16, 112, 128, 128, 3, 1, 1]
     batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding = default
-    print("warm up")
-    warmup = 1_000
-    x = torch.rand(batch_size, in_channels, image_size, image_size, device=device)
-    model = torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, device=device)
-    for _ in trange(warmup):
-        model(x)
-        torch.cuda.synchronize()
-        time.sleep(0.01)
+    # print("warm up")
+    # warmup = 1_000
+    # x = torch.rand(batch_size, in_channels, image_size, image_size, device=device)
+    # model = torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, device=device)
+    # for _ in trange(warmup):
+    #     model(x)
+    #     torch.cuda.synchronize()
+    #     time.sleep(0.01)
 
     bs_data = change_one_dim(
         default,
@@ -110,13 +116,13 @@ elif args.command == 'plot':
         ax.plot(data[0], data[1], label='truth')
         if args.pred:
             ax.plot(data[0], data[2], label='pred')
-        ax2 = ax.twinx()
-        err = (data[2] - data[1]) / data[1]
-        ax2.plot(data[0], err, 'k--', label="error")
-        ax2.grid()
-        # vals = ax2.get_yticks()
-        # ax2.set_yticklabels(['{:,.0%}'.format(x) for x in vals])
-        ax2.yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+            ax2 = ax.twinx()
+            err = (data[2] - data[1]) / data[1]
+            ax2.plot(data[0], err, 'k--', label="error")
+            ax2.grid()
+            # vals = ax2.get_yticks()
+            # ax2.set_yticklabels(['{:,.0%}'.format(x) for x in vals])
+            ax2.yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
 
     figure, axes = plt.subplots(nrows=3, ncols=1, figsize=[8, 8])
     draw(axes[0], bs_data, "batch size")
