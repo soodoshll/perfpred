@@ -602,7 +602,7 @@ def mp_measure(func, args):
     and i can sleep well without manually checking if the program is still running
     """
     
-    if args.num_gpus == 1:
+    if args.num_gpus == 0:
         func(0, args)
     else:
         processes = [Process(target=func, args=(gpu_id, args)) for gpu_id in range(args.num_gpus)]
