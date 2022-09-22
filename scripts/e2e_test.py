@@ -20,7 +20,7 @@ torch_vision_model_revise()
 device = torch.device('cuda')
 parser = argparse.ArgumentParser()
 parser.add_argument("--verbose", type=int, default=0)
-parser.add_argument("--model", choices=['resnet50', 'vgg'], default='vgg')
+parser.add_argument("--model", choices=['resnet50', 'vgg', 'inception_v3', 'alexnet'], default='vgg')
 parser.add_argument("--batch_size", nargs='+', type=int, default=[8, 16, 32])
 parser.add_argument("--use_fp16", action="store_true")
 parser.add_argument("--nomodulo", action="store_true")
@@ -37,6 +37,10 @@ if args.model == 'vgg':
     model = build_vgg_model(True)
 elif args.model == 'resnet50':
     model = torchvision.models.resnet50()
+elif args.model == 'inception_v3':
+    model = torchvision.models.inception_v3()
+elif args.model == 'alexnet':
+    model = torchvision.models.alexnet()
 else:
     raise RuntimeError("not supported")
 
@@ -45,10 +49,11 @@ model.to(device)
 loss_fn = nn.CrossEntropyLoss()
 optim = torch.optim.SGD(model.parameters(), lr=1e-3)
 fp16_options = [False, True] if args.use_fp16 else [False]
+# fp16_options = [True]
 first = True
 data = []
 # warmup(device)
-image_size = 224
+image_size = 299
 for batch_size in args.batch_size:
     data_bs = []
     data.append(data_bs)
@@ -63,12 +68,16 @@ for batch_size in args.batch_size:
             if use_fp16:
                 with torch.autocast(device_type='cuda', dtype=torch.float16):
                     out = model(inputs)
+                    if args.model == 'inception_v3':
+                        out = out[0]
                     loss = loss_fn(out, labels)
                 scaler.scale(loss).backward()
                 scaler.step(optim)
                 scaler.update()
             else:
                 out = model(inputs)
+                if args.model == 'inception_v3':
+                    out = out[0]
                 loss = loss_fn(out, labels) 
                 loss.backward()
                 optim.step()

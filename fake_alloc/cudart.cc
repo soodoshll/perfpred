@@ -6,9 +6,7 @@
 extern "C" {
 
 cudaError_t cudaMalloc(void **devPtr, size_t size) {
-  // printf("alloc size: %lu\n", size);
   pytorch_malloc::Allocator *allocator = pytorch_malloc::Allocator::Instance();
-  // printf("allocated\n");
   return allocator->malloc(devPtr, size);
 }
 
@@ -18,15 +16,12 @@ cudaError_t cudaFree(void *devPtr) {
 }
 
 cudaError_t cudaMemGetInfo (size_t* free, size_t* total) {
-  // printf("cudagetInfo called\n");
-// ​cudaError_t cudaMemGetInfo (size_t* free, size_t* total) {
   *free = BUFFER_SIZE;
   *total = BUFFER_SIZE;
   return cudaSuccess;
 }
 
 __host__ cudaError_t cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, void **args, size_t sharedMem, cudaStream_t stream) {
-  // printf("you're fucked\n");
   return cudaSuccess;
 }
 
@@ -37,6 +32,12 @@ __host__ cudaError_t cudaMemcpy(void *dst, const void *src, size_t count, cudaMe
 __host__ cudaError_t cudaMemsetAsync(void *devPtr, int value, size_t count, cudaStream_t stream) {
   return cudaSuccess;
 }
+
+
+/*
+qidong: I tried to overwrite the cudnn calls to avoid useless computation but didn't succeed.
+*/
+
 // cudnnStatus_t cudnnConvolutionForward(
 //     cudnnHandle_t                       handle,
 //     const void                         *alpha,

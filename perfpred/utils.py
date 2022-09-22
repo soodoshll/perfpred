@@ -81,6 +81,11 @@ def torch_vision_model_revise():
     torchvision.models.resnet.BasicBlock.forward = _basicblock_revised_forward
     torchvision.models.resnet.Bottleneck.forward = _bottleneck_revised_forward
 
+    def _basic_conv2d_revised_forawrd(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        return torch.nn.functional.relu(x)
+    torchvision.models.inception.BasicConv2d.forward = _basic_conv2d_revised_forawrd
 
 def change_inplace_to_false(module):
     if hasattr(module, 'inplace'):

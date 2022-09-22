@@ -3,9 +3,6 @@
 #include <cuda_runtime_api.h>
 #include <unordered_map>
 #include <mutex>
-// #include <vector>
-// 
-// enum cudaError_t : int;
 
 constexpr size_t BUFFER_SIZE = (size_t)6 * 1024 * 1024 * 1024;
 namespace pytorch_malloc {
@@ -38,13 +35,12 @@ class Allocator {
  private:
   void *devPtr_ = nullptr;
   size_t alloc_num_ = 0;
-  // size_t size_[10000];
   long long alloc_cur_ = 0;
   long long alloc_max_ = 0;
-  // std::vector<size_t> size_;
   std::unordered_map<void*, size_t> size_;
   size_t target_mem_limit = -1;
   std::mutex mutex_;
+  size_t buffer_size;
 };
 
 }  // namespace pytorch_malloc

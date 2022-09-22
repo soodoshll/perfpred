@@ -59,6 +59,13 @@ class Tracer(object):
     def backward_hook(self, record):
         def fun(module, input, output):
             dx = True
+            has_grad = False
+            for grad_output in output:
+                if not torch.all(grad_output == 0):
+                    has_grad = True
+                    break
+            if not has_grad:
+                return
             if isinstance(module, nn.Conv2d):
                 if input[0] is None:
                     dx = False
@@ -112,7 +119,8 @@ class Tracer(object):
              'autograd::engine::evaluate_function: LogSoftmaxBackward0'), 
             'aten::cross_entropy_loss'),
         nn.BatchNorm2d : ('autograd::engine::evaluate_function: CudnnBatchNormBackward0', 'aten::batch_norm'),
-        nn.AdaptiveAvgPool2d: ('autograd::engine::evaluate_function: MeanBackward1', 'aten::adaptive_avg_pool2d')
+        nn.AdaptiveAvgPool2d: ('autograd::engine::evaluate_function: MeanBackward1', 'aten::adaptive_avg_pool2d'),
+        nn.Dropout : ("aten::native_dropout_backward", "aten::dropout")
     }
 
 
@@ -141,7 +149,13 @@ class Tracer(object):
                 optim_t = 0
 
                 tuple_ptr = 0
+                
+                # linear_cnt = 0
                 for c in children:
+                    # if c.name.find("dropout") >= 0:
+                        # print(c)
+                    # if c.name.startswith("autograd::engine::evaluate_function") and c.name.find('AccumulateGrad') < 0:
+                        # print(idx, c.name)
                     step_kernel_time += sum([k.duration for k in c.kernels])
                     if ptr < len(new_trace):
                         module = new_trace[ptr][1]
@@ -155,8 +169,10 @@ class Tracer(object):
                             #     ptr += 1
                             #     module = new_trace[ptr][1]
                             #     is_forward = new_trace[ptr][0]
+                        # print(matching_names)
                         is_tuple = isinstance(matching_names, tuple)
                         matching_name = matching_names[tuple_ptr] if is_tuple else matching_names
+                        # print(matching_name)
                         if re.match(matching_name, c.name) is not None:
                             kernel_time = self._get_children_kernel_time(c, marked_kernel)
                             # kernel_time = c.cuda_time_total
@@ -170,6 +186,11 @@ class Tracer(object):
                                 ptr += 1
                                 tuple_ptr = 0
                                 matching_names = None
+                                # if isinstance(new_trace[ptr][1], nn.Linear):
+                                    # linear_cnt += 1
+                                    # print("linear layer", linear_cnt)
+                        # else:
+                            # print(c.name)
                     if c.name.startswith('Optimizer.step'):
                         optim_t += self._get_children_kernel_time(c, marked_kernel)
                     if c.name == 'autograd::engine::evaluate_function: torch::autograd::AccumulateGrad':

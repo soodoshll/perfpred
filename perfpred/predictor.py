@@ -17,7 +17,7 @@ import sys
 
 LINEAR_PATH = glob.glob("./data/matmul_*.data")
 CONV2D_PATH_SQL = ["./habitat-data/conv2d/conv2d-RTX2080Ti-0.sqlite", "./habitat-data/conv2d/conv2d-RTX2080Ti-1.sqlite"]
-CONV2D_PATH = glob.glob("./data/conv_*.data")
+CONV2D_PATH = glob.glob("./data/eco*/conv_*.data") + glob.glob("./data/conv_2080ti*.data")
 MAXPOOL_PATH = glob.glob("./data/maxpool_*.data")
 BATCHNORM_PATH = glob.glob("./data/batchnorm_*.data")
 
@@ -66,6 +66,11 @@ def MAPELoss(output, target, inputs=None):
     loss = torch.abs((target - output) / target)
     return torch.mean(loss)    
 
+def MSPELoss(output, target, inputs=None):
+    loss = (target - output) / target
+    loss = loss * loss
+    return torch.mean(loss)  
+
 def LogMSELoss(output, target, inputs=None):
     loss = torch.log(target) - output
     loss = (loss * loss)
@@ -104,10 +109,10 @@ class Predictor(object):
         model.train()
         dataloader = torch.utils.data.DataLoader(self.train_set, batch_size=batch_size, shuffle=True, num_workers=8)
         
-        loss_fn = LogMSELoss
+        loss_fn = MSPELoss
         optim = torch.optim.Adam(
                 model.parameters(), 
-                lr=5e-4, 
+                lr=1e-4, 
                 weight_decay=1e-5
                 )
         lowest_err = 9e9
@@ -126,7 +131,7 @@ class Predictor(object):
                 for hook in hooks:
                     hook()
                 test_error = self.test_set_error()
-                print(f"[{epoch_idx}/{num_epoch}] \t train: {loss.detach().cpu().numpy() : .5f} test: {test_error : .5f} | truth: {labels[0] :.2f}, pred: {torch.exp(out[0]) :.2f}", file=sys.stderr)
+                print(f"[{epoch_idx}/{num_epoch}] \t train: {loss.detach().cpu().numpy() : .5f} test: {test_error : .5f} | truth: {labels[0] :.2f}, pred: {out[0] :.2f}", file=sys.stderr)
                 # early stop
                 if epoch_idx == 0 or test_error < lowest_err:
                     lowest_err = test_error
@@ -149,7 +154,7 @@ class Predictor(object):
         inputs = self.preprocess(inputs)
         out = self.model(inputs)
         out = out[0] * self.stds[-1] + self.avgs[-1]
-        out = torch.exp(out)
+        # out = torch.exp(out)
         return out.detach().numpy()
 
     def test_set_error(self, batch_size=1000, filename=None):
@@ -164,7 +169,7 @@ class Predictor(object):
                 labels = data[:, -1].to(self.device)
                 out = self.model(inputs)
                 pred = out[:, 0] * self.stds[-1] + self.avgs[-1]
-                pred = torch.exp(pred)
+                # pred = torch.exp(pred)
                 truth = labels * self.stds[-1] + self.avgs[-1]
                 # print(pred[0], truth[0])
                 error = (pred - truth) / truth
