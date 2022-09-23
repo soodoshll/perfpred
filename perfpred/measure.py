@@ -14,11 +14,13 @@ import random
 import time
 import os
 
+import multiprocessing as mp
 from multiprocessing import Process
 
 # device = torch.device('cuda')
 torch.set_grad_enabled(True)
 torch.backends.cudnn.benchmark = True
+mp.set_start_method('spawn')
 
 def measure_binary_elementwise(n, device=torch.device('cuda'), op=torch.add, dry_run=10, nitr=20):
     A = torch.rand((n, ), device=device, dtype=torch.float32)
