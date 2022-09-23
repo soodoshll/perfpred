@@ -20,7 +20,6 @@ from multiprocessing import Process
 # device = torch.device('cuda')
 torch.set_grad_enabled(True)
 torch.backends.cudnn.benchmark = True
-mp.set_start_method('spawn')
 
 def measure_binary_elementwise(n, device=torch.device('cuda'), op=torch.add, dry_run=10, nitr=20):
     A = torch.rand((n, ), device=device, dtype=torch.float32)
@@ -53,7 +52,7 @@ def measure_unary_elementwise(n, device=torch.device('cuda'), op=F.relu, dry_run
     dur = start_event.elapsed_time(end_event) / nitr
     return dur
 
-def measure_op(inputs_generator, measured_func, analyze_func, device, use_fp16=False, nitr=3):
+def measure_op(inputs_generator, measured_func, analyze_func, device, use_fp16=False, nitr=3, cooldown=0):
     data = inputs_generator()
     info = {}
     torch.cuda.synchronize(device)
@@ -162,7 +161,7 @@ class MatMulMeasure(object):
             info['data'].append((dur_avg_forward, dur_avg_backward, self.use_fp16) + self.params)      
         return fun
     
-    def run(self, step=1, use_fp16=False, filename='matmul_data'):
+    def run(self, step=1, use_fp16=False, filename='matmul_data', cooldown=0):
         self.use_fp16 = use_fp16
         if use_fp16:
             self.scaler = torch.cuda.amp.GradScaler()
@@ -172,7 +171,7 @@ class MatMulMeasure(object):
                 while not success:
                     success = True
                     try:
-                        ret = measure_op(partial(self.get_inputs_generator()), self.get_measured_func(), self.get_analyze_func(), device=self.device) 
+                        ret = measure_op(partial(self.get_inputs_generator()), self.get_measured_func(), self.get_analyze_func(), device=self.device, cooldown=cooldown) 
                     except RuntimeError:
                         # print("oom")
                         success = False
@@ -269,7 +268,7 @@ class ConvMeasure(object):
             info['data'].append((dur_avg_forward, dur_avg_backward, self.dx, self.use_fp16) + self.params)      
         return func
 
-    def run(self, step=1, dx=True, use_fp16=False, filename='conv_data'):
+    def run(self, step=1, dx=True, use_fp16=False, filename='conv_data', cooldown=0):
         self.use_fp16 = use_fp16
         if use_fp16:
             self.scaler = torch.cuda.amp.GradScaler()
@@ -280,7 +279,7 @@ class ConvMeasure(object):
                     success = True
                     try:
                         ret = measure_op(partial(self.get_inputs_generator(), dx), self.get_measured_func(), self.get_analyze_func(), 
-                        device=self.device, use_fp16 = use_fp16) 
+                        device=self.device, use_fp16 = use_fp16, cooldown=cooldown) 
                     except RuntimeError as e:
                         # print(e)
                         success = False
@@ -560,7 +559,7 @@ def mp_measure_conv(gpu_id, args):
     print(f"measuring conv, fp16 enabled={args.use_fp16}")
     # conv_measure.run(100_000, dx=True, use_fp16=use_fp16, filename=f'conv_data_{"fp16_"}{gpu_id}.data')
     filename = _data_filename(args.data_dir, "conv", gpu_id, args.device, args.use_fp16)
-    conv_measure.run(100_000, dx=True, use_fp16=args.use_fp16, filename=filename)
+    conv_measure.run(100_000, dx=True, use_fp16=args.use_fp16, filename=filename, cooldown=args.cooldown)
 
 def mp_measure_matmul(gpu_id, args):
     matmul_measure = MatMulMeasure(
@@ -607,6 +606,7 @@ def mp_measure(func, args):
     if args.num_gpus == 0:
         func(0, args)
     else:
+        mp.set_start_method('spawn')
         processes = [Process(target=func, args=(gpu_id, args)) for gpu_id in range(args.num_gpus)]
         for p in processes:
             p.start()
@@ -617,7 +617,7 @@ def mp_measure(func, args):
                     processes[i].terminate()
                     processes[i].join()
                 # if not processes[i].is_alive():
-                print("retart process", i)
+                print("restart process", i)
                 processes[i] = Process(target=func, args=(i, args))
                 processes[i].start()
             
@@ -635,6 +635,7 @@ if __name__ == '__main__':
     parser.add_argument("--cooldown", type=float, default=0)
 
     args = parser.parse_args()
+    global cooldown
     cooldown = args.cooldown
 
     # mp_measure(mp_measure_batchnorm, num_gpus=4)
