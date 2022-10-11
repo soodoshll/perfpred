@@ -11,7 +11,7 @@ torch.backends.cudnn.benchmark = True
 
 device = torch.device('cuda')
 
-scaler = torch.cuda.amp.GradScaler()
+# scaler = torch.cuda.amp.GradScaler()
 
 image_size = 224
 in_channels = 3
@@ -23,11 +23,11 @@ nitr = 10
 warm_up = 10
 batch_size = 32
 
+model = torchvision.models.vgg13()
+model.to(device)
 
-for batch_size in range(8, 9):
+for batch_size in range(1, 64):
     x = torch.rand((batch_size, in_channels, image_size, image_size), device=device, dtype=torch.float32)
-    model = torchvision.models.resnet50()
-    model.to(device)
     loss_fn = torch.nn.CrossEntropyLoss()
     optim = torch.optim.SGD(model.parameters(), lr=1e-3)
     labels = torch.randint(1000 - 1, (batch_size, ), device=device)
@@ -39,13 +39,11 @@ for batch_size in range(8, 9):
         # out.backward()
         torch.cuda.synchronize()
         optim.zero_grad()
-        with torch.autocast(device_type='cuda', dtype=torch.float16):
-            out = model(x)
-            loss = loss_fn(out, labels)
+        out = model(x)
+        loss = loss_fn(out, labels)
             # out.backward()
-        scaler.scale(loss).backward()
-        scaler.step(optim)
-        scaler.update()
+        loss.backward()
+        optim.step()
         torch.cuda.synchronize()
             # loss = out.sum()
         # with amp.scale_loss(loss, optim, delay_overflow_check=True) as scaled_loss:
@@ -60,11 +58,11 @@ for batch_size in range(8, 9):
             torch.profiler.ProfilerActivity.CPU,
             torch.profiler.ProfilerActivity.CUDA,
         ]) as p:
-        with torch.autocast(device_type='cuda', dtype=torch.float16):
-            dur_tc = timing_cpu(foo, warm_up, nitr)
+        # with torch.autocast(device_type='cuda', dtype=torch.float16):
+        dur_tc = timing_cpu(foo, warm_up, nitr)
 
         torch.cuda.synchronize()
-    p.export_chrome_trace("trace_tc_8.json")
+    # p.export_chrome_trace("trace_tc_8.json")
         # clock = get_clock()
 
     # prof.export_chrome_trace("trace_tc.json")
