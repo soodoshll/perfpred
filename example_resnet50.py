@@ -7,7 +7,7 @@ import argparse
 from perfpred.utils import timing
 torchdynamo.config.verbose=True
 parser = argparse.ArgumentParser()
-parser.add_argument('--batch_size', type=int, default=32)
+parser.add_argument('--batch_size', type=int, default=16)
 args = parser.parse_args()
 
 device = 'cuda'
@@ -26,7 +26,6 @@ def fw(x):
 
 def train_loop():
     optim.zero_grad()
-    # with torch.no_grad():
     out = fw(x)
     loss = out.sum()
     loss.backward()

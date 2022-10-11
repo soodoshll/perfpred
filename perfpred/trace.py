@@ -9,19 +9,21 @@ from .predictor import Conv2DPredictor, LinearPredictor, MaxPoolingPredictor, Ba
 # from .utils import get_clock
 
 UNARY_COEFF = 1.50332785e-08 
+UNARY_BIAS = 0
 BINARY_COEFF = UNARY_COEFF * 1.5
 
 def measure_simple_op():
-    global UNARY_COEFF, BINARY_COEFF
+    global UNARY_COEFF, BINARY_COEFF, UNARY_BIAS
     x_range = np.arange(200_000, 11_000_000, 200_000)
     y = []
     for n in x_range:
         dur = measure_unary_elementwise(n, op=F.relu)
         y.append(dur)
-    ret, _, _, _ = np.linalg.lstsq(
-        np.expand_dims(x_range, axis=1), 
-        np.array(y), rcond=-1)
+    A = np.vstack([x_range, np.ones(len(x_range))]).T
+    # print(A.shape)
+    ret, _, _, _ = np.linalg.lstsq(A, np.array(y), rcond=-1)
     UNARY_COEFF = ret[0]
+    UNARY_BIAS = ret[1]
     BINARY_COEFF = 1.5 * UNARY_COEFF 
 
 print("Measuring Memory Bandwidth...")
@@ -250,17 +252,17 @@ class Tracer(object):
         return np.mean(step_time) / 1e3, np.mean(all_kernel_time)/1e3 , unmarked_event, trace_with_dur
         # return conv_time / 1e3
 
-conv_pred = Conv2DPredictor(True)
-conv_pred.load_model("./model/predictor_model_conv2d.th")
+# conv_pred = Conv2DPredictor(True)
+# conv_pred.load_model("./model/predictor_model_conv2d.th")
 
-linear_pred = LinearPredictor()
-linear_pred.load_model("./model/predictor_model_linear.th")
+# linear_pred = LinearPredictor()
+# linear_pred.load_model("./model/predictor_model_linear.th")
 
-maxpool_pred = MaxPoolingPredictor()
-maxpool_pred.load_model("./model/predictor_model_maxpool.th")
+# maxpool_pred = MaxPoolingPredictor()
+# maxpool_pred.load_model("./model/predictor_model_maxpool.th")
 
-batchnorm_pred = BatchNormPredictor()
-batchnorm_pred.load_model("./model/predictor_model_batchnorm.th")
+# batchnorm_pred = BatchNormPredictor()
+# batchnorm_pred.load_model("./model/predictor_model_batchnorm.th")
 
 def predict_using_trace(model, trace, use_fp16=False, verbose=0):
     tot_time = 0

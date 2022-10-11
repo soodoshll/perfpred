@@ -3,31 +3,16 @@ import torchvision
 import torch.nn.functional as F
 import time
 import numpy as np
-from utils import timing
+from perfpred.utils import timing
+from perfpred import trace
 device = 'cuda'
 from matplotlib import pyplot as plt
 
 
-class ResBlock(torch.nn.Module):
-    def __init__(self, input_dim, output_dim):
-        super(ResBlock, self).__init__()
-        self.conv = torch.nn.Conv2d(input_dim, output_dim, 3, padding=1)
-        self.bn = torch.nn.BatchNorm2d(output_dim)
-        self.conv_bias = torch.nn.Parameter(self.conv.bias.reshape(output_dim, 1, 1))
-    
-    def forward(self, x):
-        # o = F.conv2d(x, self.conv.weight, padding=1)
-        # o = o + self.conv_bias
-        o = self.conv(x)
-        o = self.bn(o)
-        # o = F.batch_norm(o, self.bn.running_mean, self.bn.running_var)
-        o = o + x
-        o = F.relu(o)
-        return o
-
 # model = ResBlock(64, 64)
 nitr = 20
 model_names = ["resnet18", "resnet34", "resnet50", "resnet101", "resnet152"]
+# model_names = ["resnet18"]
 time_before =[]
 time_after = []
 pred = []
@@ -70,9 +55,6 @@ for model_name in model_names:
     for group in groups:
         g_list = list(group.nodes())
         for i, node in enumerate(g_list):
-            # print(node.kind())
-            # if node.kind() != "prim::Constant":
-                # print(node)
             if node.kind() in kind_counted:
                 io_amount = np.prod(node.output().type().sizes())
                 if i == 0 or i == len(g_list) - 1:
@@ -80,7 +62,7 @@ for model_name in model_names:
                 else:
                     io_size += 2 * io_amount
 
-    p = io_size * 4 / 1e9 / 616 * 1000
+    p = io_size * trace.UNARY_COEFF / 2 + trace.UNARY_BIAS * (len(g_list) - 1)
     time_before.append(dur)
     time_after.append(dur1)
     pred.append(p)

@@ -23,7 +23,7 @@ nitr = 10
 warm_up = 10
 batch_size = 32
 
-model = torchvision.models.vgg13()
+model = torchvision.models.vgg11()
 model.to(device)
 
 for batch_size in range(1, 64):
