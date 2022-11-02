@@ -41,7 +41,7 @@ input_channels_list = [1, 3, 5, 7, 9]
 
 print(len(model_list) * len(batch_size_list) * len(input_channels_list))
 
-model = torchvision.models.vgg11()
+model = torchvision.models.resnet18()
 model.to(device)
 
 x = torch.rand((2, 3, 299, 299), device=device)
