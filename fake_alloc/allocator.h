@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <mutex>
 
-constexpr size_t BUFFER_SIZE = (size_t)6 * 1024 * 1024 * 1024;
+constexpr size_t BUFFER_SIZE = (size_t)8 * 1024 * 1024 * 1024;
 namespace pytorch_malloc {
 
 class Allocator {
@@ -32,16 +32,24 @@ class Allocator {
     target_mem_limit = x;
   }
 
+  size_t get_mem_limit() {
+    return target_mem_limit;
+  }
+
+  size_t get_free_space() {
+    return target_mem_limit - alloc_cur_;
+  }
+
  private:
   void *devPtr_ = nullptr;
-  size_t alloc_num_ = 0;
+  size_t alloc_num_ = 1024;
   long long alloc_cur_ = 0;
   long long alloc_max_ = 0;
   std::unordered_map<void*, size_t> size_;
-  size_t target_mem_limit = -1;
+  // size_t target_mem_limit = -1;
+  size_t target_mem_limit = (size_t)1024 * 1024 * 1024 * 128;
   std::mutex mutex_;
-  size_t buffer_size;
-};
+ };
 
 }  // namespace pytorch_malloc
 
