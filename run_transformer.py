@@ -3,7 +3,7 @@ import transformers
 from transformers import BertConfig, BertModel, GPT2Model, GPT2Config, BertForPreTraining, BertForSequenceClassification
 import os
 from ctypes import cdll
-from apex import amp
+# from apex import amp
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -63,7 +63,7 @@ optim = torch.optim.Adam(model.parameters(), lr=1e-3)
 x = torch.zeros((args.batch_size, args.seq_len), device=device, dtype=torch.int32)
 # fake_alloc.init_max_mem()
 print(torch.cuda.max_memory_allocated() / 1e6)
-model, optim = amp.initialize(model, optim, opt_level="O" + str(args.amp), verbosity=0)
+# model, optim = amp.initialize(model, optim, opt_level="O" + str(args.amp), verbosity=0)
 
 parameter_size = 0
 for p in model.parameters():
@@ -92,26 +92,30 @@ class SavedTensorRecord(object):
 
 saved_tensor_record = SavedTensorRecord()
 if use_fake_alloc:
-    fake_alloc.init_max_mem()
+    fake_alloc.reset_max_mem()
 
-for i in range(5):
+for i in range(500):
     saved_tensor_record.reset()
 
-    with torch.autograd.graph.saved_tensors_hooks(saved_tensor_record.pack_hook, saved_tensor_record.unpack_hook):
+    # with torch.autograd.graph.saved_tensors_hooks(saved_tensor_record.pack_hook, saved_tensor_record.unpack_hook):
     # with torch.no_grad():
-        optim.zero_grad()
-        out = model(x)
-        # print(torch.cuda.memory_allocated())
-        # print(out.keys())
-        # print(out)
-        loss = out['logits'].sum()
-    # loss = out['pooler_output'].sum() + out['last_hidden_state'].sum()
-        # loss = out['prediction_logits'].sum()
-        # loss = out.sum()
-        with amp.scale_loss(loss, optim, delay_overflow_check=True) as scaled_loss:
-            scaled_loss.backward()
-        optim.step()
-        del loss, out
+    optim.zero_grad()
+    out = model(x)
+    # print(torch.cuda.memory_allocated())
+    # print(out.keys())
+    # print(out)
+    loss = out['logits'].sum()
+# loss = out['pooler_output'].sum() + out['last_hidden_state'].sum()
+    # loss = out['prediction_logits'].sum()
+    # loss = out.sum()
+    loss.backward()
+    if use_fake_alloc:
+        peak_mem = fake_alloc.max_mem_allocated()
+    else:
+        peak_mem = torch.cuda.max_memory_allocated()
+        
+    optim.step()
+        # del loss, out
 # print("activation:", saved_tensor_record.saved_tensor_size)
 
 def tensor_size(x):

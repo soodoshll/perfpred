@@ -53,7 +53,10 @@ fp16_options = [False, True] if args.use_fp16 else [False]
 first = True
 data = []
 # warmup(device)
-image_size = 299
+if args.model == 'inception_v3':
+    image_size = 299
+else:
+    image_size = 224
 for batch_size in args.batch_size:
     data_bs = []
     data.append(data_bs)

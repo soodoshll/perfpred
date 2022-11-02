@@ -20,6 +20,7 @@ CONV2D_PATH_SQL = ["./habitat-data/conv2d/conv2d-RTX2080Ti-0.sqlite", "./habitat
 CONV2D_PATH = glob.glob("./data/eco*/conv_*.data") + glob.glob("./data/conv_2080ti*.data")
 MAXPOOL_PATH = glob.glob("./data/maxpool_*.data")
 BATCHNORM_PATH = glob.glob("./data/batchnorm_*.data")
+BMM_PATH = glob.glob("./data/bmm_*.data")
 
 device = torch.device('cuda')
 
@@ -263,6 +264,54 @@ class LinearPredictor(Predictor):
             if dur1 > 10:
                 print(n, m, k, dur1)
                 return 
+
+class BatchMatMulPredict(Predictor):
+    def __init__(self, device=torch.device('cpu')):
+        self.feature_name = ['batch', 'l', 'm', 'n', 'is_forward', 'use_fp16']
+        self.model = make_mlp(device, len(self.feature_name))
+        self.device = device
+
+    def load_data(self, filenames):
+        rows_fp16 = []
+        rows_fp32 = []
+        for fn in filenames:
+            with open(fn, "rb") as f:
+                while 1:
+                    try:
+                        objs = pickle.load(f)
+                        for obj in objs:
+                            dur_forward, dur_backward, use_fp16, batch_size, l, m, n = obj
+                            rows = rows_fp16 if use_fp16 else rows_fp32
+                            rows.append(
+                                (batch_size, l, m, n, 1, use_fp16, dur_forward)
+                            )
+                            rows.append(
+                                (batch_size, l, m, n, 0, use_fp16, dur_backward)
+                            )
+                    except (EOFError):
+                        break
+        min_len = min(len(rows_fp16), len(rows_fp32))
+        print(f"fp16: {len(rows_fp16)} | fp32 : {len(rows_fp32)}")
+        rows = rows_fp16[-min_len:] + rows_fp32[-min_len:]
+        self.raw_dataset = torch.tensor(rows, dtype=torch.float32)
+        print(self.raw_dataset[0])
+        print("datasize:", len(rows))
+
+        self.avgs = torch.mean(self.raw_dataset, axis=0)
+        self.stds = torch.std(self.raw_dataset, axis=0)
+        self.avgs[-1] = 0
+        self.stds[-1] = 1
+
+        self.avgs[-2] = 0
+        self.stds[-2] = 1
+
+        self.dataset = self.raw_dataset
+        print("avg:", self.avgs)
+        print("std:", self.stds)  
+
+        train_set_size = int(self.dataset.shape[0] * 0.8)
+        test_set_size = self.dataset.shape[0] - train_set_size
+        self.train_set, self.test_set = torch.utils.data.random_split(self.dataset, [train_set_size, test_set_size]) 
 
 def modpos(n, m, zero_base = True):
     n = n % m
@@ -581,6 +630,14 @@ def train(args):
         maxpool_pred.train(model_name,
                            batch_size=512,
                            num_epoch=200)
+    elif args.op == "bmm":
+        bmm_pred = BatchMatMulPredict(device=device)
+        bmm_pred.load_data(filenames=BMM_PATH)
+        print("train set size:", len(bmm_pred.train_set))
+        model_name = "./model/predictor_model_bmm.th"
+        bmm_pred.train(model_name,
+                       batch_size=512,
+                       num_epoch=200)
     else:
         raise RuntimeError("Not supported")
     # error = conv_pred.test_set_error(filename="conv_error.png")
@@ -615,7 +672,7 @@ def load_model():
 if __name__ == '__main__':
     # load_model()
     parser = argparse.ArgumentParser()
-    parser.add_argument("op", choices=["conv2d", "mm", "batchnorm", "maxpool2d"])
+    parser.add_argument("op", choices=["conv2d", "mm", "batchnorm", "maxpool2d", "bmm"])
     parser.add_argument("--nomodulo", action='store_true')
     args = parser.parse_args()
     train(args)

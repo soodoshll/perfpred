@@ -27,7 +27,7 @@ torch.cuda.synchronize()
 torch.cuda.reset_peak_memory_stats()
 train_loop()
 torch.cuda.synchronize()
-max_mem_allocated = torch.cuda.max_memory_allocated()
+max_mem_allocated = torch.cuda.max_memory_reserved()
 
 
 # torch.backends.cudnn.benchmark = True

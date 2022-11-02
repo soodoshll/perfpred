@@ -43,6 +43,7 @@ cudaError_t Allocator::malloc(void **devPtr, size_t size) {
   // if (*devPtr >= devPtr + BUFFER_SIZE)
   //   return cudaErrorMemoryAllocation; 
   // size_[*devPtr] = size;
+
   alloc_cur_ += size;
   // alloc_num_ += aligned_size;
   // if (alloc_cur_ > alloc_max_)
