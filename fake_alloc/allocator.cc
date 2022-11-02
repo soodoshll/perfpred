@@ -63,8 +63,7 @@ Allocator::~Allocator() {
 
 cudaError_t Allocator::malloc(void **devPtr, size_t size) {
   std::lock_guard<std::mutex> guard(mutex_);
-    return cudaErrorMemoryAllocation; 
-  }
+  auto aligned_size = ceilInt(size, GRANULARITY);
   alloc_num_ %= (BUFFER_SIZE / 2);
   if (alloc_num_ + aligned_size >= BUFFER_SIZE) {
     alloc_num_ = 0;
