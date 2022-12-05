@@ -21,7 +21,7 @@ use_fake_alloc = os.environ.get("LD_PRELOAD", None) == "./fake_libcudart.so"
 print("Using fake allocator:", use_fake_alloc)
 if use_fake_alloc:
     import fake_alloc
-    fake_alloc.set_target_mem_limit(8_000_000_000)
+    fake_alloc.set_target_mem_limit(50_000_000_000)
 # 
 # torch.backends.cudnn.benchmark = False
 # torch.backends.cudnn.deterministic = True
@@ -81,7 +81,7 @@ x = torch.rand((bs, 3, image_size, image_size), device=device)
 model(x)
 
 if use_fake_alloc:
-    fake_alloc.init_max_mem()
+    fake_alloc.reset_max_mem()
 else:
     torch.cuda.reset_max_memory_allocated()
     
@@ -92,8 +92,8 @@ optim = torch.optim.SGD(model.parameters(), lr=1e-3)
 # model, optim = amp.initialize(model, optim, opt_level="O" + str(args.amp))
 
 
-for i in range(5):
-    optim.zero_grad(set_to_none=True)
+for i in range(10):
+    optim.zero_grad(set_to_none=False)
     # saved_tensor_record.reset()
     if i == 1:
         torch.cuda.synchronize()
@@ -101,9 +101,8 @@ for i in range(5):
     if i == 4:
         torch.cuda.synchronize()
         if use_fake_alloc:
-            fake_alloc.init_max_mem()
-        else:
-            torch.cuda.reset_peak_memory_stats()
+            fake_alloc.reset_max_mem()
+        torch.cuda.reset_peak_memory_stats()
     # print("run forward")
     # with torch.no_grad():
     # with torch.autograd.graph.saved_tensors_hooks(saved_tensor_record.pack_hook, saved_tensor_record.unpack_hook):
@@ -121,6 +120,6 @@ del x, t, model
 torch.cuda.synchronize()
 # print(saved_tensor_record.saved_tensor_size)
 if use_fake_alloc:
-    print(fake_alloc.max_mem_allocated())
+    print(f"{fake_alloc.max_mem_allocated() / (1024 **3) :.2f} {torch.cuda.max_memory_reserved() / (1024 **3) :.2f} ")
 else:
-    print(torch.cuda.max_memory_allocated())
+    print(f"{torch.cuda.max_memory_allocated() / (1024 **3) :.2f} {torch.cuda.max_memory_reserved() / (1024 **3) :.2f} ")

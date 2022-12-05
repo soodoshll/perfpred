@@ -1,4 +1,4 @@
-from re import I
+from re import I, L
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -98,11 +98,44 @@ def get_children_kernel_time2(event):
     end = max(end_list)
     return end - start
 
-class MatMulMeasure(object):
+class Measure(object):
+    def get_measured_func(self):
+        def fun(data):
+            x = data[0]
+            model = data[1]
+            o = model(x).sum()
+            o.backward()
+            torch.cuda.synchronize(self.device)
+        
+        def fun_fp16(data):
+            x = data[0]
+            model = data[1]
+            with torch.autocast(device_type='cuda', dtype=torch.float16):
+                o = model(x).sum()
+            self.scaler.scale(o).backward()
+            torch.cuda.synchronize(self.device)            
+        return fun_fp16 if self.use_fp16 else fun
 
+    def run(self, step=1, dx=True, use_fp16=False, filename='data', cooldown=0):
+        self.use_fp16 = use_fp16
+        if use_fp16:
+            self.scaler = torch.cuda.amp.GradScaler()
+        with open(filename, 'ab+') as f:
+            for _ in trange(step):
+                success = False
+                while not success:
+                    success = True
+                    try:
+                        ret = measure_op(self.get_inputs_generator(), self.get_measured_func(), self.get_analyze_func(), 
+                        device=self.device, use_fp16 = use_fp16, cooldown=cooldown) 
+                    except RuntimeError as e:
+                        success = False
+                pickle.dump(ret['data'], f)
+                f.flush()
+
+class MatMulMeasure(Measure):
     forward_op_kw = ["aten::linear"]
     backward_op_kw = ["AddmmBackward0", "MmBackward0"]
-
     def __init__(self, n_range, m_range, k_range, device):
         self.n_range = n_range
         self.m_range = m_range
@@ -123,23 +156,6 @@ class MatMulMeasure(object):
             model = torch.nn.Linear(m, k, device=self.device, bias=bias)
             return x, model
         return fun
-    
-    def get_measured_func(self):
-        def fun(data):
-            x = data[0]
-            model = data[1]
-            o = model(x).sum()
-            o.backward()
-            torch.cuda.synchronize(self.device)
-        
-        def fun_fp16(data):
-            x = data[0]
-            model = data[1]
-            with torch.autocast(device_type='cuda', dtype=torch.float16):
-                o = model(x).sum()
-            self.scaler.scale(o).backward()
-            torch.cuda.synchronize(self.device)            
-        return fun_fp16 if self.use_fp16 else fun
 
     def get_analyze_func(self):
         def fun(info, prof):
@@ -161,27 +177,76 @@ class MatMulMeasure(object):
             info['data'].append((dur_avg_forward, dur_avg_backward, self.use_fp16) + self.params)      
         return fun
     
-    def run(self, step=1, use_fp16=False, filename='matmul_data', cooldown=0):
-        self.use_fp16 = use_fp16
-        if use_fp16:
-            self.scaler = torch.cuda.amp.GradScaler()
-        with open(filename, 'ab+') as f:
-            for _ in range(step):
-                success = False
-                while not success:
-                    success = True
-                    try:
-                        ret = measure_op(partial(self.get_inputs_generator()), self.get_measured_func(), self.get_analyze_func(), device=self.device, cooldown=cooldown) 
-                    except RuntimeError:
-                        # print("oom")
-                        success = False
-                pickle.dump(ret['data'], f)
-                f.flush()
-    
     def numpy(self):
         return np.array(self.record)
 
-class ConvMeasure(object):
+class BatchMatMulMeasure(Measure):
+    forward_op_kw = "aten::bmm"
+    backward_op_kw = "BmmBackward0"
+    def __init__(self, batch_size_range, l_range, m_range, n_range, use_fp16=True, device='cpu'):
+        self.batch_size_range = batch_size_range
+        self.l_range = l_range
+        self.m_range = m_range
+        self.n_range = n_range
+        self.use_fp16 = use_fp16
+        self.record = []
+
+        self.device = device
+    
+    def get_inputs_generator(self):
+        batch_size = random.randint(*self.batch_size_range)
+        l = random.randint(*self.l_range)
+        m = random.randint(*self.m_range)
+        n = random.randint(*self.n_range)
+        self.params = (batch_size, l, m, n)
+        def func():
+            dtype = torch.float16 if self.use_fp16 else torch.float32
+            A = torch.rand((batch_size, l, m), device=self.device, requires_grad=True, dtype=dtype)
+            B = torch.rand((batch_size, m, n), device=self.device, requires_grad=True, dtype=dtype)
+            return A, B
+        return func
+
+    def get_analyze_func(self):
+
+        def fun(info, prof):
+            events = prof.profiler.function_events
+            tmp_forward_durations = []
+            tmp_backward_durations = []
+            if not 'data' in info.keys():
+                info['data'] = []
+            for evt in events:
+                if evt.device_type == DeviceType.CPU and evt.name in self.forward_op_kw:
+                    # duration = evt.cpu_parent.cuda_time_total / 1e3
+                    duration = evt.cuda_time_total / 1e3
+                    tmp_forward_durations.append(duration)
+                if evt.device_type == DeviceType.CPU and evt.name in self.backward_op_kw:
+                    duration = evt.cuda_time_total / 1e3
+                    tmp_backward_durations.append(duration)
+            dur_avg_forward = np.mean(tmp_forward_durations)
+            dur_avg_backward = np.mean(tmp_backward_durations)
+            info['data'].append((dur_avg_forward, dur_avg_backward, self.use_fp16) + self.params)      
+        return fun
+    
+    def get_measured_func(self):
+        def func(data):
+            A = data[0]
+            B = data[1]
+            out = A.bmm(B)
+            out = out.sum()
+            out.backward()
+            torch.cuda.synchronize(self.device)
+
+        def func_fp16(data):
+            A = data[0]
+            B = data[1]
+            with torch.autocast(device_type='cuda', dtype=torch.float16):
+                out = A.bmm(B)
+                out = out.sum()
+            self.scaler.scale(out).backward()
+            torch.cuda.synchronize(self.device)
+        return func_fp16 if self.use_fp16 else func
+
+class ConvMeasure(Measure):
     """
     Measure forward and backward for conv2D
     """
@@ -213,10 +278,9 @@ class ConvMeasure(object):
         stride = random.randint(*self.stride_range) 
         padding = random.randint(*self.padding_range)
         self.params = (batch_size, kernel_size, image_size, in_channels, out_channels, stride, padding)
-        def func(dx=True):
-            self.dx = dx
+        def func():
             dtype = torch.float16 if self.use_fp16 else torch.float32
-            A = torch.rand((batch_size, in_channels, image_size, image_size), device=self.device, requires_grad=dx, dtype=dtype)
+            A = torch.rand((batch_size, in_channels, image_size, image_size), device=self.device, requires_grad=True, dtype=dtype)
             layer = torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding=padding, device=self.device, bias=False)
             return A, layer
         return func
@@ -225,8 +289,6 @@ class ConvMeasure(object):
         def func(data):
             A = data[0]
             layer = data[1]
-            # A.zero_grad(set_to_none=True)
-            # layer.zeo_grad(set_to_none=True)
             out = layer(A)
             out = out.sum()
             out.backward()
@@ -235,12 +297,9 @@ class ConvMeasure(object):
         def func_fp16(data):
             A = data[0]
             layer = data[1]
-            # A.zero_grad(set_to_none=True)
-            # layer.zeo_grad(set_to_none=True)
             with torch.autocast(device_type='cuda', dtype=torch.float16):
                 out = layer(A)
                 out = out.sum()
-                # out.backward()
             self.scaler.scale(out).backward()
             torch.cuda.synchronize(self.device)
         return func_fp16 if self.use_fp16 else func
@@ -268,30 +327,11 @@ class ConvMeasure(object):
             info['data'].append((dur_avg_forward, dur_avg_backward, self.dx, self.use_fp16) + self.params)      
         return func
 
-    def run(self, step=1, dx=True, use_fp16=False, filename='conv_data', cooldown=0):
-        self.use_fp16 = use_fp16
-        if use_fp16:
-            self.scaler = torch.cuda.amp.GradScaler()
-        with open(filename, 'ab+') as f:
-            for _ in trange(step):
-                success = False
-                while not success:
-                    success = True
-                    try:
-                        ret = measure_op(partial(self.get_inputs_generator(), dx), self.get_measured_func(), self.get_analyze_func(), 
-                        device=self.device, use_fp16 = use_fp16, cooldown=cooldown) 
-                    except RuntimeError as e:
-                        # print(e)
-                        success = False
-                        # torch.cuda.empty_cache()
-                pickle.dump(ret['data'], f)
-                f.flush()
-                # time.sleep(0.1)
 
     def numpy(self):
         return np.array(self.record_forward) #, np.array(self.record_dw), np.array(self.record_dwdx)
 
-class BatchNormMeasure(object):
+class BatchNormMeasure(Measure):
     """
     forward and backward of batchnorm2d
     """
@@ -386,7 +426,7 @@ class BatchNormMeasure(object):
     def numpy(self):
         return np.array(self.record_forward), np.array(self.record_dw), np.array(self.record_dwdx)
 
-class MaxPoolingMeasure(object):
+class MaxPoolingMeasure(Measure):
     forward_name = "aten::max_pool2d_with_indices"
     backward_name = "aten::max_pool2d_with_indices_backward"
 
@@ -563,7 +603,7 @@ def mp_measure_conv(gpu_id, args):
 
 def mp_measure_matmul(gpu_id, args):
     matmul_measure = MatMulMeasure(
-        n_range=(1, 1024),
+        n_range=(1, 8192),
         m_range=(1, 32768),
         k_range=(1, 32768),
         device=torch.device(f'cuda:{gpu_id}')
@@ -571,6 +611,22 @@ def mp_measure_matmul(gpu_id, args):
     print("measuring matmul")
     filename = _data_filename(args.data_dir, "matmul", gpu_id, args.device, args.use_fp16)
     matmul_measure.run(10_000, use_fp16=args.use_fp16, filename=filename)
+
+def mp_measure_bmm(gpu_id, args):
+    bmm_measure = BatchMatMulMeasure(
+        batch_size_range=(1, 129),
+        # batch_size_range=[96, 96],
+        # l_range=[512, 512],
+        # m_range=[512, 512],
+        # n_range=[64, 64],
+        l_range=(1, 1025),
+        m_range=(1, 1025),
+        n_range=(1, 1025),
+        device=torch.device(f'cuda:{gpu_id}')
+    )
+    print("measuring bmm")
+    filename = _data_filename(args.data_dir, "bmm", gpu_id, args.device, args.use_fp16)
+    bmm_measure.run(10_000, use_fp16=args.use_fp16, filename=filename)
 
 def mp_measure_batchnorm(gpu_id, args):
     batchnorm_measure = BatchNormMeasure(
@@ -620,14 +676,10 @@ def mp_measure(func, args):
                 print("restart process", i)
                 processes[i] = Process(target=func, args=(i, args))
                 processes[i].start()
-            
-
-        for p in processes:
-            p.join()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("op", choices=["conv2d", "mm", "batchnorm", "maxpool2d"])
+    parser.add_argument("op", choices=["conv2d", "mm", "batchnorm", "maxpool2d", "bmm"])
     parser.add_argument("device", choices=['2070', '2080ti', 't4', 'v100'])
     parser.add_argument("--num_gpus", type=int, default=1)
     parser.add_argument("--use_fp16", action="store_true")
@@ -647,6 +699,8 @@ if __name__ == '__main__':
         mp_measure(mp_measure_batchnorm, args)
     elif args.op == "maxpool2d":
         mp_measure(mp_measure_maxpool, args)
+    elif args.op == "bmm":
+        mp_measure(mp_measure_bmm, args)
     else:
         raise RuntimeError("Not supported")
 

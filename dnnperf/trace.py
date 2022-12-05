@@ -299,7 +299,7 @@ class DropoutNode(Node):
         return torch.tensor([])
     
     def tensor_info(self):
-        return torch.tensor([self.inputs_size, self.output_size])
+        return torch.tensor([self.input_size, self.output_size])
 
 class DropoutBPNode(BPNode):
     pass
@@ -316,7 +316,7 @@ class AdaptiveAvgPoolNode(Node):
         return torch.tensor([])
     
     def tensor_info(self):
-        return torch.tensor([self.inputs_size, self.output_size])
+        return torch.tensor([self.input_size, self.output_size])
 
 class AdapativeAvgPoolBPNode(BPNode):
     pass
@@ -387,7 +387,7 @@ class Graph(object):
         'AddBackward' : AddNode,
         'AddmmBackward' : AddmmNode,
         'ReluBackward' : ActivationNode,
-        'BatchNorm' : BatchNormNode,
+        'CudnnBatchNormBackward' : BatchNormNode,
         'MaxPool' : MaxpoolNode,
         'AccumulateGrad' : AccumulateGradNode,
         'ReshapeAlias' : ReshapeNode,
@@ -484,7 +484,7 @@ class Graph(object):
         else:
             key = None
             for k in self.name_to_constructor.keys():
-                if str(fn).find(k) >= 0:
+                if str(fn)[1:].startswith(k):
                     key = k
             if key is None:
                 raise RuntimeError("unsupported op " + str(fn))
@@ -580,6 +580,7 @@ class Graph(object):
 
             node_data.append(torch.concat([h_feat_align, t_feat_align]))
         
+        print("#node:", len(node_data), "#edge:", len(edge_data))
         return node_type, node_data, edge_list, edge_data
 
     def dump(self, filename):
