@@ -1,7 +1,7 @@
 #include <cuda_runtime_api.h>
 #include "allocator.h"
 #include <cstdio>
-// #include <cudnn.h>
+#include <cudnn.h>
 
 extern "C" {
 
