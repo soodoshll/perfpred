@@ -3,9 +3,17 @@
 #include <cuda_runtime_api.h>
 #include <unordered_map>
 #include <mutex>
+#include <list>
 
 constexpr size_t BUFFER_SIZE = (size_t)8 * 1024 * 1024 * 1024;
 namespace pytorch_malloc {
+
+struct PoolNode {
+  size_t start, end;
+  bool used = false;
+  PoolNode(size_t start, size_t end, bool used) : start(start), end(end), used(used) {}
+  size_t length() { return end - start;}
+};
 
 class Allocator {
  public:
@@ -28,25 +36,24 @@ class Allocator {
     alloc_max_ = alloc_cur_;
   }
 
-  void set_target_mem_limit(size_t x) {
-    target_mem_limit = x;
-  }
+  void set_target_mem_limit(size_t x);
 
   size_t get_mem_limit() {
     return target_mem_limit;
   }
 
   size_t get_free_space() {
-    return target_mem_limit - alloc_cur_;
+    return target_mem_limit - allocated;
   }
 
  private:
-  void *devPtr_ = nullptr;
+  // void *devPtr_ = nullptr;
   size_t alloc_num_ = 1024;
   long long alloc_cur_ = 0;
   long long alloc_max_ = 0;
+  size_t allocated = 0;
+  std::list<PoolNode> pool;
   std::unordered_map<void*, size_t> size_;
-  // size_t target_mem_limit = -1;
   size_t target_mem_limit = (size_t)1024 * 1024 * 1024 * 128;
   std::mutex mutex_;
  };
