@@ -1,13 +1,12 @@
 import torch
 import torchvision
-from tqdm import trange
 import time
 import subprocess
 
 def timing(func, warmup=3, nitr=20, verbose=0):
     if verbose >= 1:
         print("warmup...")
-        for _ in trange(warmup):
+        for _ in range(warmup):
             func()
     else:
         for _ in range(warmup):
@@ -25,7 +24,7 @@ def timing(func, warmup=3, nitr=20, verbose=0):
 def timing_cpu(func, warmup=3, nitr=20, verbose=0):
     if verbose >= 1:
         print("warmup...")
-        for _ in trange(warmup):
+        for _ in range(warmup):
             func()
     else:
         for _ in range(warmup):
@@ -98,7 +97,7 @@ def warmup(device):
     warmup = 1_000
     x = torch.rand(batch_size, in_channels, image_size, image_size, device=device)
     model = torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, device=device)
-    for _ in trange(warmup):
+    for _ in range(warmup):
         model(x)
     torch.cuda.synchronize(device)
 
@@ -109,3 +108,36 @@ def get_clock():
             clock = (int(line.split()[-2]))
             break
     return clock
+
+def remove_initialization():
+    initializers = [
+        "xavier_normal", 
+        "xavier_uniform",
+        "normal",
+        "trunc_normal",
+        "uniform",
+        "zeros",
+        "eye",
+        "constant",
+        "ones",
+        "dirac",
+        "kaiming_uniform",
+        "kaiming_normal",
+        "orthogonal"
+    ]
+
+    for init in initializers:
+        exec(f"torch.nn.init.{init} = lambda *args, **kwargs: None")
+        exec(f"torch.nn.init.{init}_ = lambda *args, **kwargs: None")
+
+
+def measure_gpu_mem(train_loop, tot_time, interval=0.1):
+    def func(max_mem): 
+        max_mem.value = 0
+        t0 = time.time()
+        while (time.time() - t0) <= tot_time:
+            ret = subprocess.run(['nvidia-smi','--query-gpu=memory.used', '-i','0','--format=csv,noheader,nounits'], capture_output=True)
+            mem = float(ret.stdout)
+            max_mem.value = max(max_mem.value, mem)
+            time.sleep(interval)
+    

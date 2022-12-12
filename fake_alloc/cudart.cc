@@ -36,13 +36,18 @@ __host__ cudaError_t cudaLaunchKernel(const void* func, dim3 gridDim, dim3 block
 //       return CUDNN_STATUS_SUCCESS;
 //     }
 
-// __host__ cudaError_t cudaMemcpy(void *dst, const void *src, size_t count, cudaMemcpyKind kind) {
-//   return cudaSuccess;
-// }
+__host__ cudaError_t cudaMemcpy(void *dst, const void *src, size_t count, cudaMemcpyKind kind) {
+  return cudaSuccess;
+}
 
-// __host__ cudaError_t cudaMemsetAsync(void *devPtr, int value, size_t count, cudaStream_t stream) {
-//   return cudaSuccess;
-// }
+__host__ cudaError_t cudaMemsetAsync(void *devPtr, int value, size_t count, cudaStream_t stream) {
+  return cudaSuccess;
+}
+
+__host__ cudaError_t cudaMemcpyAsync(void *dst, const void *src, size_t count, cudaMemcpyKind kind, cudaStream_t stream) {
+  return cudaSuccess;
+}
+
 cudnnStatus_t cudnnConvolutionForward(
     cudnnHandle_t                       handle,
     const void                         *alpha,

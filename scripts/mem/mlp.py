@@ -1,7 +1,6 @@
 import torch
 from torch import nn
 import argparse
-from pyinstrument import Profiler
 from torch.nn.utils import skip_init
 from perfpred.utils import remove_initialization, measure_gpu_mem
 import os

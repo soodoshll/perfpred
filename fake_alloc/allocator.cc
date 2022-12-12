@@ -6,6 +6,7 @@
 
 #define DTYPE char
 #define GRANULARITY 512
+#define BASE 1024
 
 namespace pytorch_malloc {
 
@@ -40,23 +41,25 @@ cudaError_t Allocator::malloc(void **devPtr, size_t size) {
       pool.insert(itr, PoolNode(new_start, itr->end, false));
       itr->end = new_start;
       itr->used = true;
-      *devPtr = reinterpret_cast<void*>(itr->start);
+      *devPtr = reinterpret_cast<void*>(itr->start + BASE);
+      alloc_ += aligned_size;
+      if (alloc_ > alloc_max_) alloc_max_ = alloc_;
       return cudaSuccess;
     }
   }
-  allocated += aligned_size;
   return cudaErrorMemoryAllocation;
 }
 
 
 cudaError_t Allocator::free(void *devPtr) {
   std::lock_guard<std::mutex> guard(mutex_);
-  auto ptr = reinterpret_cast<size_t>(devPtr);
+  auto ptr = reinterpret_cast<size_t>(devPtr) - BASE;
   auto itr = pool.begin();
   for ( ; itr != pool.end() ; itr++) {
     if (ptr == itr->start) itr->used = false;
     break;    
   }
+  alloc_ -= itr->length();
   auto itr_next = itr; itr_next++;
   while (itr_next != pool.end() && !itr_next->used) {
     itr->end = itr_next->end;

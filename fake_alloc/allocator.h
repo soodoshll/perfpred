@@ -33,7 +33,7 @@ class Allocator {
   }
   
   void init_max_mem() {
-    alloc_max_ = alloc_cur_;
+    alloc_max_ = alloc_;
   }
 
   void set_target_mem_limit(size_t x);
@@ -43,15 +43,13 @@ class Allocator {
   }
 
   size_t get_free_space() {
-    return target_mem_limit - allocated;
+    return target_mem_limit - alloc_;
   }
 
  private:
   // void *devPtr_ = nullptr;
-  size_t alloc_num_ = 1024;
-  long long alloc_cur_ = 0;
-  long long alloc_max_ = 0;
-  size_t allocated = 0;
+  size_t alloc_max_ = 0;
+  size_t alloc_ = 0;
   std::list<PoolNode> pool;
   std::unordered_map<void*, size_t> size_;
   size_t target_mem_limit = (size_t)1024 * 1024 * 1024 * 128;
