@@ -7,7 +7,7 @@ then
     cmd="env LD_PRELOAD=./fake_libcudart.so "$cmd
 fi
 
-for bs in {1024..8192..512}
+for bs in {1024..10240..512}
 do
     ret=$($cmd --batch_size $bs 2>/dev/null)
     echo $bs, $ret
