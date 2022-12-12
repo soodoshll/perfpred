@@ -41,7 +41,7 @@ def train(nitr=2):
     x = torch.empty((args.batch_size, args.ndim), device=device)
 
     for _ in range(nitr):
-        optim.zero_grad()
+        optim.zero_grad(set_to_none=False)
         out = model(x)
         out = out.sum()
         out.backward()

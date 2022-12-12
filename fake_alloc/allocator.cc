@@ -11,6 +11,7 @@
 namespace pytorch_malloc {
 
 void Allocator::set_target_mem_limit(size_t size) {
+  // printf("[Fake allocator] Initialized\n");
   assert(this->pool.empty());
   this->pool.emplace_back(0, size, false);
   this->target_mem_limit = size;
@@ -53,6 +54,7 @@ cudaError_t Allocator::malloc(void **devPtr, size_t size) {
 
 cudaError_t Allocator::free(void *devPtr) {
   std::lock_guard<std::mutex> guard(mutex_);
+  // printf("[start free]\n");
   auto ptr = reinterpret_cast<size_t>(devPtr) - BASE;
   auto itr = pool.begin();
   for ( ; itr != pool.end() ; itr++) {
@@ -74,6 +76,7 @@ cudaError_t Allocator::free(void *devPtr) {
     itr_prev = itr;
     itr_prev --;
   }
+  // printf("[free finish]\n");
   return cudaSuccess;
 }
 
