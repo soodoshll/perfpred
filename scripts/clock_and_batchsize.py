@@ -1,42 +1,42 @@
 import torch
+import torch.multiprocessing as mp
+mp.set_start_method('spawn', force=True)
 import torchvision
 import subprocess
 import time
-import multiprocessing as mp
 from perfpred.vgg import build_vgg_model
+import argparse
+import os
 
-device = "cuda"
-model = torchvision.models.vgg13()
-# model = build_vgg_model()
-model.to(device)
-optim = torch.optim.SGD(model.parameters(), lr=1e-3)
-
-nitr = 1000
+device = os.env("PERPRED_DEVICE")
 
 def get_clock():
-    out = subprocess.run("nvidia-smi -q -d CLOCK -i 0", capture_output=True, shell=True)
-    for line in out.stdout.split(b'\n'):
-        if line.strip().startswith(b'SM'):
-            clock = (int(line.split()[-2]))
-            break
+    ret = subprocess.run(['nvidia-smi','--query-gpu=clocks.sm', '-i','0','--format=csv,noheader,nounits'], capture_output=True)
+    clock = float(ret.stdout)
     return clock
 
-for batch_size in [64]:
-    x = torch.rand(batch_size, 3, 224, 224, device=device)
-    t0 = time.time()
-    last_t = t0
-    for i in range(nitr):
-        optim.zero_grad(set_to_none=True)
-        o = model(x)
-        o = o.sum()
-        o.backward()
-        optim.step()
+def work():
+    device = "cuda"
+    model = torchvision.models.vgg13()
+    model.to(device)
+    optim = torch.optim.SGD(model.parameters(), lr=1e-3)
+
+    nitr = 1000
+    for batch_size in [64]:
+        x = torch.rand(batch_size, 3, 224, 224, device=device)
+        for i in range(nitr):
+            optim.zero_grad(set_to_none=True)
+            o = model(x)
+            o = o.sum()
+            o.backward()
+            optim.step()
+            torch.cuda.synchronize()
         torch.cuda.synchronize()
-        if time.time() - last_t >= 10:
-            print(f"{batch_size}, {time.time() - t0 :.1f}, {get_clock()}")
-            last_t = time.time()
-        # if time.time() - t0 >= 65:
-            # break
-    # assert(not child.is_alive())
-    torch.cuda.synchronize()
-    
+
+if __name__ == '__main__':
+    p = mp.Process(target=work)
+    p.start()
+    while p.is_alive():
+        print(get_clock())
+        time.sleep(0.05)
+    p.join()
