@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import argparse
 from torch.nn.utils import skip_init
-from perfpred.utils import remove_initialization, measure_gpu_mem
+from perfpred.utils import remove_initialization, parse_mem_log
 import os
 import subprocess
 from subprocess import PIPE, STDOUT
@@ -58,20 +58,11 @@ if use_fake_alloc:
 else:
     if os.path.isfile("log_mem.tmp"):
         os.remove("log_mem.tmp")
-    pid = os.getpid()
     monitor_proc = subprocess.Popen(['nvidia-smi', '-lms', '10', '--query-compute-apps=pid,used_gpu_memory', '--format=csv', '-f', 'log_mem.tmp'])
-    # monitor_proc = subprocess.Popen(['nvidia-smi', '-lms', '10', '--query-compute-apps=pid,used_gpu_memory', '--format=csv,noheader',], stdout=PIPE)
     train(args.nitr)
     monitor_proc.terminate()
     time.sleep(1)
-    max_mem = 0
-    with open("log_mem.tmp", "r") as f:
-        # for line in monitor_proc.communicate()[0].splitlines():
-        for line in f:
-            tokens = line.split(',')
-            if tokens[0] == str(pid):
-                mem = int(tokens[1].split()[0])
-                max_mem = max(max_mem, mem)
+    max_mem = parse_mem_log("log_mem.tmp", os.getpid())
     os.remove("log_mem.tmp")
     print(max_mem)
 # ret = monitor_proc.communicate()[0]

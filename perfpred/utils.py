@@ -2,6 +2,7 @@ import torch
 import torchvision
 import time
 import subprocess
+import os
 
 def timing(func, warmup=3, nitr=20, verbose=0):
     if verbose >= 1:
@@ -130,14 +131,23 @@ def remove_initialization():
         exec(f"torch.nn.init.{init} = lambda *args, **kwargs: None")
         exec(f"torch.nn.init.{init}_ = lambda *args, **kwargs: None")
 
+def parse_mem_log(filename, pid):
+    max_mem = 0
+    with open(filename, "r") as f:
+        for line in f:
+            tokens = line.split(',')
+            if tokens[0] == str(pid):
+                mem = int(tokens[1].split()[0])
+                max_mem = max(max_mem, mem)
+    return max_mem
 
-def measure_gpu_mem(train_loop, tot_time, interval=0.1):
-    def func(max_mem): 
-        max_mem.value = 0
-        t0 = time.time()
-        while (time.time() - t0) <= tot_time:
-            ret = subprocess.run(['nvidia-smi','--query-gpu=memory.used', '-i','0','--format=csv,noheader,nounits'], capture_output=True)
-            mem = float(ret.stdout)
-            max_mem.value = max(max_mem.value, mem)
-            time.sleep(interval)
-    
+def measure_gpu_mem(func):
+    if os.path.isfile("log_mem.tmp"):
+        os.remove("log_mem.tmp")
+    monitor_proc = subprocess.Popen(['nvidia-smi', '-lms', '10', '--query-compute-apps=pid,used_gpu_memory', '--format=csv', '-f', 'log_mem.tmp'])
+    func()
+    monitor_proc.terminate()
+    time.sleep(1)
+    max_mem = parse_mem_log("log_mem.tmp", os.getpid())
+    os.remove("log_mem.tmp")
+    return max_mem

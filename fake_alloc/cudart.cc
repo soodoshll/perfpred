@@ -62,7 +62,7 @@ cudnnStatus_t cudnnConvolutionForward(
     const void                         *beta,
     const cudnnTensorDescriptor_t       yDesc,
     void                               *y) {
-      printf("you're fucked, conv2d forward\n");
+      // printf("you're fucked, conv2d forward\n");
       return CUDNN_STATUS_SUCCESS;
     }
 
@@ -74,7 +74,7 @@ cudnnStatus_t cudnnConvolutionBackwardBias(
     const void                      *beta,
     const cudnnTensorDescriptor_t    dbDesc,
     void                            *db) {
-      printf("you're fucked, conv2d backward bias\n");
+      // printf("you're fucked, conv2d backward bias\n");
       return CUDNN_STATUS_SUCCESS; 
     }
 
@@ -92,7 +92,7 @@ cudnnStatus_t cudnnConvolutionBackwardFilter(
     const void                         *beta,
     const cudnnFilterDescriptor_t       dwDesc,
     void                               *dw) {
-      printf("you're fucked, conv2d backward filter\n");
+      // printf("you're fucked, conv2d backward filter\n");
       return CUDNN_STATUS_SUCCESS;       
     }
 
@@ -115,7 +115,7 @@ cudnnStatus_t cudnnConvolutionBiasActivationForward(
     const cudnnActivationDescriptor_t   activationDesc,
     const cudnnTensorDescriptor_t       yDesc,
     void                               *y) {
-      printf("you're fucked, conv2d bias activation forward\n");
+      // printf("you're fucked, conv2d bias activation forward\n");
       return CUDNN_STATUS_SUCCESS;
     }
 
@@ -168,7 +168,7 @@ cudnnStatus_t cudnnConvolutionBackwardData(
       size_t                              workSpaceSizeInBytes,
       void                                *reserveSpace,
       size_t                              reserveSpaceSizeInBytes) {
-        printf("you're fucked, bn backward\n");
+        // printf("you're fucked, bn backward\n");
         return CUDNN_STATUS_SUCCESS;          
       }
   cudnnStatus_t cudnnIm2Col(
@@ -179,7 +179,7 @@ cudnnStatus_t cudnnConvolutionBackwardData(
     cudnnConvolutionDescriptor_t    convDesc,
     void                            *colBuffer) {
 
-        printf("you're fucked, im2col\n");
+        // printf("you're fucked, im2col\n");
         return CUDNN_STATUS_SUCCESS;          
     }
 }
