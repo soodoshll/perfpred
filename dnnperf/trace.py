@@ -20,7 +20,7 @@ class Node(object):
             edge[1] = self.output_size
     
     def backward(self):
-        raise RuntimeError("何もない！" + str(self))
+        raise RuntimeError("no corresponding backward function defined" + str(self))
 
     def hyperparameter_info(self):
         raise RuntimeError("大変" + str(self))
@@ -403,7 +403,7 @@ class Graph(object):
         # 'CloneBackward' : TNode,
         'TransposeBackward0' : TNode,
         'AsStridedBackward' : TNode,
-
+        'MulBackward' : AddNode,
         # 'MulBackward0' : AddmmNode
         # Split
         }
@@ -449,11 +449,9 @@ class Graph(object):
                 assert len(node.in_edges) == 1
                 src = node.in_edges[0]
                 src.out_edges = node.out_edges
-                # if self.out == node:
-                #     # print("BBQle")
-                #     self.out = src
+                if self.out == node:
+                    self.out = src
                 for dst, _, _ in node.out_edges:
-                    # print(dst)
                     for i, pred in enumerate(dst.in_edges):
                         if pred == node:
                             dst.in_edges[i] = src
@@ -529,7 +527,7 @@ class Graph(object):
         self.add_node(self.optim)
         fw_bw_map = {}
         def backward(node):
-            # print(node)
+            # print('backward:', node)
             if node in fw_bw_map:
                 return fw_bw_map[node]
             
@@ -546,7 +544,7 @@ class Graph(object):
             return bw_node
 
         out = self.fn_to_node[self.out]
-        if isinstance(out, ReshapeNode):
+        while  isinstance(out, ReshapeNode) or isinstance(out, TNode):
             out = out.in_edges[0]
         backward(out)
 
@@ -569,7 +567,7 @@ class Graph(object):
             node_type.append(type_id)
             # remember to do one-hot when loading data
 
-            h_feat = node.hyperparameter_info()
+            h_feat = torch.tensor(node.hyperparameter_info())
             t_feat = node.tensor_info()
 
             h_feat_align = torch.zeros((self.max_hyperparam_feature_length,))
