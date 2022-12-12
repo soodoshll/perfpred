@@ -6,6 +6,7 @@
 #include <list>
 
 constexpr size_t BUFFER_SIZE = (size_t)8 * 1024 * 1024 * 1024;
+constexpr size_t INIT_USAGE = (size_t)1 * 1024 * 1024 * 1024;
 namespace pytorch_malloc {
 
 struct PoolNode {
@@ -48,8 +49,8 @@ class Allocator {
 
  private:
   // void *devPtr_ = nullptr;
-  size_t alloc_max_ = 0;
-  size_t alloc_ = 0;
+  size_t alloc_max_ = INIT_USAGE;
+  size_t alloc_ = INIT_USAGE;
   std::list<PoolNode> pool;
   std::unordered_map<void*, size_t> size_;
   size_t target_mem_limit = (size_t)1024 * 1024 * 1024 * 128;
