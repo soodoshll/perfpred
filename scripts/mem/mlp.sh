@@ -20,7 +20,7 @@ fi
 echo "Change Number of layers.."
 for nl in {10..150..10}
 do
-    ret=$($cmd --nlayer $nl --ndim 2048 --batch_size 1024 2>/dev/null)
+    ret=$($cmd --nlayer $nl --ndim 4096 --batch_size 1024 2>/dev/null)
     echo $nl, $ret
     sleep 1
 done
