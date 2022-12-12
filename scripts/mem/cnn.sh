@@ -7,10 +7,18 @@ then
     cmd="env LD_PRELOAD=./fake_libcudart.so "$cmd
 fi
 
-echo "Change Batch Size.."
-for bs in {16..256..16}
+# echo "Resnet"
+# for bs in {16..256..16}
+# do
+#     ret=$($cmd resnet50 --batch_size $bs 2>/dev/null)
+#     echo $bs, $ret
+#     sleep 1
+# done
+
+echo "Densenet"
+for bs in {4..96..4}
 do
-    ret=$($cmd resnet50 --batch_size $bs 2>/dev/null)
+    ret=$($cmd densenet201 --batch_size $bs 2>/dev/null)
     echo $bs, $ret
     sleep 1
 done

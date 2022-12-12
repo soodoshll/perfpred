@@ -51,7 +51,7 @@ def train(nitr=2):
 
 
 if use_fake_alloc:
-    fake_alloc.set_target_mem_limit(128 * 1024 * 1024 * 1024)
+    fake_alloc.set_target_mem_limit(24 * 1024 * 1024 * 1024)
     fake_alloc.reset_max_mem()
     train(args.nitr)
     print(fake_alloc.max_mem_allocated() / (1024)**2)

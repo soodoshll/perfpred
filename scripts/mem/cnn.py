@@ -17,7 +17,7 @@ args = parser.parse_args()
 if 'LD_PRELOAD' in os.environ:
     use_fake_alloc = True
     import fake_alloc
-    fake_alloc.set_target_mem_limit(128 * 1024 * 1024 * 1024)
+    fake_alloc.set_target_mem_limit(24 * 1024 * 1024 * 1024)
 else:
     use_fake_alloc = False
 
