@@ -32,8 +32,6 @@ def train(nitr=2):
             last = h
         model = nn.Sequential(*layers)
         return model
-    fake_alloc.set_target_mem_limit(24 * 1024 * 1024 * 1024)
-    fake_alloc.reset_max_mem()
 
     device = 'cuda:0'
     model = make_mlp(args.ndim, [args.ndim]*args.nlayers)
@@ -56,6 +54,8 @@ if os.path.isfile("log_mem.tmp"):
 pid = os.getpid()
 
 if use_fake_alloc:
+    fake_alloc.set_target_mem_limit(24 * 1024 * 1024 * 1024)
+    fake_alloc.reset_max_mem()
     train(args.nitr)
     print(fake_alloc.max_mem_allocated() / (1024)**2)
 else:
