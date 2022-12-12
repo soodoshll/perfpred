@@ -5,6 +5,8 @@ import argparse
 import os, subprocess
 from perfpred.utils import measure_gpu_mem
 
+torch.backends.cudnn.benchmark = True
+
 parser = argparse.ArgumentParser()
 parser.add_argument('model', type=str)
 parser.add_argument('--batch_size', type=int, default=32)
