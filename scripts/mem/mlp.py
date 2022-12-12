@@ -54,7 +54,7 @@ if use_fake_alloc:
     fake_alloc.set_target_mem_limit(24 * 1024 * 1024 * 1024)
     fake_alloc.reset_max_mem()
     train(args.nitr)
-    print(fake_alloc.max_mem_allocated() / (1024)**2)
+    print(fake_alloc.max_mem_allocated() / (1024)**2 + 1024)
 else:
     if os.path.isfile("log_mem.tmp"):
         os.remove("log_mem.tmp")

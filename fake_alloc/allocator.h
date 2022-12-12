@@ -6,7 +6,7 @@
 #include <list>
 
 constexpr size_t BUFFER_SIZE = (size_t)8 * 1024 * 1024 * 1024;
-constexpr size_t INIT_USAGE = (size_t)1 * 1024 * 1024 * 1024;
+constexpr size_t INIT_USAGE = 0;
 namespace pytorch_malloc {
 
 struct PoolNode {

@@ -17,7 +17,8 @@ args = parser.parse_args()
 if 'LD_PRELOAD' in os.environ:
     use_fake_alloc = True
     import fake_alloc
-    fake_alloc.set_target_mem_limit(24 * 1024 * 1024 * 1024)
+    CNN_COMPENSATE = 1690 * 1024 * 1024
+    fake_alloc.set_target_mem_limit(24 * 1024 * 1024 * 1024 - CNN_COMPENSATE)
 else:
     use_fake_alloc = False
 
@@ -46,7 +47,7 @@ train()
 if use_fake_alloc:
     fake_alloc.reset_max_mem()
     train(args.nitr)
-    print(fake_alloc.max_mem_allocated() / (1024)**2)
+    print(fake_alloc.max_mem_allocated() / (1024)**2 + CNN_COMPENSATE)
 else:
     max_mem = measure_gpu_mem(lambda: train(args.nitr))
     print(max_mem)
