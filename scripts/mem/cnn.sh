@@ -24,7 +24,7 @@ fi
 
 for bs in 32 64 128
 do
-    ret=$($cmd inception_v3 --batch_size $bs 2>/dev/null)
+    ret=$($cmd inception_v3 --image_size 299 --batch_size $bs 2>/dev/null)
     echo inception_v3, $bs, $ret
     sleep 1
 done
