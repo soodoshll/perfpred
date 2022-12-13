@@ -1,5 +1,6 @@
 #!bin/bash
-cmd="python scripts/mem/cnn.py"
+cmd="python scripts/mem/cnn.py "$*
+echo $cmd
 if [ "$FAKE_ALLOC" == 1 ]
 then
     echo "Using fake allocator"

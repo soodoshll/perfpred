@@ -4,6 +4,7 @@ import torchvision
 import argparse
 import os, subprocess
 from perfpred.utils import measure_gpu_mem
+from torch.cuda.amp import GradScaler
 
 torch.backends.cudnn.benchmark = True
 
@@ -12,6 +13,7 @@ parser.add_argument('model', type=str)
 parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--image_size', type=int, default=224)
 parser.add_argument('--nitr', type=int, default=10)
+parser.add_argument('--amp', action="store_true")
 
 args = parser.parse_args()
 if 'LD_PRELOAD' in os.environ:
@@ -33,13 +35,24 @@ x = torch.empty((args.batch_size, 3, args.image_size, args.image_size), device=d
 label = torch.zeros((args.batch_size, ), dtype=torch.int64, device=device)
 loss_fn = nn.CrossEntropyLoss()
 
+if args.amp:
+    scaler = GradScaler()
+
 def train(nitr=2):
     for _ in range(nitr):
         optim.zero_grad()
-        out = model(x)
-        loss = loss_fn(out, label)
-        loss.backward()
-        optim.step()
+        if args.amp:
+            with torch.autocast(device_type='cuda', dtype=torch.float16):
+                out = model(x)
+                loss = loss_fn(out, label)
+            scaler.scale(loss).backward()
+            scaler.step(optim)
+            scaler.update()
+        else:
+            out = model(x)
+            loss = loss_fn(out, label)
+            loss.backward()
+            optim.step()
     torch.cuda.synchronize()
 
 # warm up
