@@ -57,10 +57,11 @@ def train(nitr=2):
 
 # warm up
 train()
+torch.cuda.reset_peak_memory_stats()
 if use_fake_alloc:
     fake_alloc.reset_max_mem()
     train(args.nitr)
     print((fake_alloc.max_mem_allocated() + CNN_COMPENSATE) / (1024)**2)
 else:
     max_mem = measure_gpu_mem(lambda: train(args.nitr))
-    print(max_mem)
+    print(max_mem, torch.cuda.max_memory_allocated() / 1024**2)
