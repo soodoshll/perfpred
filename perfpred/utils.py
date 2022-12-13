@@ -144,7 +144,7 @@ def parse_mem_log(filename, pid):
 def measure_gpu_mem(func):
     if os.path.isfile("log_mem.tmp"):
         os.remove("log_mem.tmp")
-    monitor_proc = subprocess.Popen(['nvidia-smi', '-lms', '10', '--query-compute-apps=pid,used_gpu_memory', '--format=csv', '-f', 'log_mem.tmp'])
+    monitor_proc = subprocess.Popen(['nvidia-smi', '-lms', '5', '--query-compute-apps=pid,used_gpu_memory', '--format=csv', '-f', 'log_mem.tmp'])
     func()
     monitor_proc.terminate()
     time.sleep(1)

@@ -11,7 +11,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('model', type=str)
 parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--image_size', type=int, default=224)
-parser.add_argument('--nitr', type=int, default=5)
+parser.add_argument('--nitr', type=int, default=10)
 
 args = parser.parse_args()
 if 'LD_PRELOAD' in os.environ:
