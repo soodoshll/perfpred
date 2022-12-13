@@ -5,6 +5,7 @@ import argparse
 import os, subprocess
 from perfpred.utils import measure_gpu_mem
 from torch.cuda.amp import GradScaler
+import time
 
 torch.backends.cudnn.benchmark = True
 
@@ -35,33 +36,30 @@ x = torch.empty((args.batch_size, 3, args.image_size, args.image_size), device=d
 label = torch.zeros((args.batch_size, ), dtype=torch.int64, device=device)
 loss_fn = nn.CrossEntropyLoss()
 
-if args.amp:
-    scaler = GradScaler()
+
+scaler = GradScaler(enabled=args.amp)
 
 def train(nitr=2):
     for _ in range(nitr):
         optim.zero_grad()
-        if args.amp:
-            with torch.autocast(device_type='cuda', dtype=torch.float16):
-                out = model(x)
-                loss = loss_fn(out, label)
-            scaler.scale(loss).backward()
-            scaler.step(optim)
-            scaler.update()
-        else:
+        with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=args.amp):
             out = model(x)
+            if args.model == 'inception_v3':
+                out = out.logits
             loss = loss_fn(out, label)
-            loss.backward()
-            optim.step()
+        scaler.scale(loss).backward()
+        scaler.step(optim)
+        scaler.update()
     torch.cuda.synchronize()
 
 # warm up
 train()
 torch.cuda.reset_peak_memory_stats()
+time.sleep(1)
 if use_fake_alloc:
     fake_alloc.reset_max_mem()
     train(args.nitr)
-    print((fake_alloc.max_mem_allocated() + CNN_COMPENSATE) / (1024)**2)
+    print((fake_alloc.max_mem_allocated() + CNN_COMPENSATE) / (1024)**2, torch.cuda.max_memory_reserved() / 1024**2, torch.cuda.max_memory_allocated() / 1024**2)
 else:
     max_mem = measure_gpu_mem(lambda: train(args.nitr))
     print(max_mem, torch.cuda.max_memory_allocated() / 1024**2)

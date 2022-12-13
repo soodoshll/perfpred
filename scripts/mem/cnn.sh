@@ -24,8 +24,8 @@ done
 
 for bs in 16 32 64
 do
-    ret=$($cmd vgg19_bn --batch_size $bs 2>/dev/null)
-    echo vgg19, $bs, $ret
+    ret=$($cmd inception_v3 --batch_size $bs 2>/dev/null)
+    echo inception_v3, $bs, $ret
     sleep 1
 done
 
