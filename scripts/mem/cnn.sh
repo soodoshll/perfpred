@@ -7,21 +7,34 @@ then
     cmd="env LD_PRELOAD=./fake_libcudart.so "$cmd
 fi
 
-# echo "Resnet"
-# for bs in {16..256..16}
+for bs in 32 64 128
+do
+    ret=$($cmd resnet50 --batch_size $bs 2>/dev/null)
+    echo resnet50, $bs, $ret
+    sleep 1
+done
+
+for bs in 32 64 96
+do
+    ret=$($cmd densenet201 --batch_size $bs 2>/dev/null)
+    echo densenet201, $bs, $ret
+    sleep 1
+done
+
+for bs in 16 32 64
+do
+    ret=$($cmd vgg19_bn --batch_size $bs 2>/dev/null)
+    echo vgg19, $bs, $ret
+    sleep 1
+done
+
+# echo "Densenet"
+# for bs in {4..96..4}
 # do
-#     ret=$($cmd resnet50 --batch_size $bs 2>/dev/null)
+#     ret=$($cmd densenet201 --batch_size $bs 2>/dev/null)
 #     echo $bs, $ret
 #     sleep 1
 # done
-
-echo "Densenet"
-for bs in {4..96..4}
-do
-    ret=$($cmd densenet201 --batch_size $bs 2>/dev/null)
-    echo $bs, $ret
-    sleep 1
-done
 
 # echo "Change Number of layers.."
 # for nl in {10..150..10}

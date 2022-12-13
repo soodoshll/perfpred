@@ -47,7 +47,7 @@ train()
 if use_fake_alloc:
     fake_alloc.reset_max_mem()
     train(args.nitr)
-    print(fake_alloc.max_mem_allocated() / (1024)**2 + CNN_COMPENSATE)
+    print((fake_alloc.max_mem_allocated() + CNN_COMPENSATE) / (1024)**2)
 else:
     max_mem = measure_gpu_mem(lambda: train(args.nitr))
     print(max_mem)
