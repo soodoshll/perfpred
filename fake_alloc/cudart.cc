@@ -5,24 +5,23 @@
 
 extern "C" {
 
-cudaError_t cudaMalloc(void **devPtr, size_t size) {
-  // printf("alloc\n");
-  pytorch_malloc::Allocator *allocator = pytorch_malloc::Allocator::Instance();
-  return allocator->malloc(devPtr, size);
-  
-}
+// cudaError_t cudaMalloc(void **devPtr, size_t size) {
+//   // printf("alloc\n");
+//   pytorch_malloc::Allocator *allocator = pytorch_malloc::Allocator::Instance();
+//   return allocator->malloc(devPtr, size);
+// }
 
-cudaError_t cudaFree(void *devPtr) {
-  pytorch_malloc::Allocator *allocator = pytorch_malloc::Allocator::Instance();
-  return allocator->free(devPtr);
-}
+// cudaError_t cudaFree(void *devPtr) {
+//   pytorch_malloc::Allocator *allocator = pytorch_malloc::Allocator::Instance();
+//   return allocator->free(devPtr);
+// }
 
-cudaError_t cudaMemGetInfo (size_t* free, size_t* total) {
-  pytorch_malloc::Allocator *allocator = pytorch_malloc::Allocator::Instance();
-  *free = allocator->get_free_space();
-  *total = allocator->get_mem_limit();
-  return cudaSuccess;
-}
+// cudaError_t cudaMemGetInfo (size_t* free, size_t* total) {
+//   pytorch_malloc::Allocator *allocator = pytorch_malloc::Allocator::Instance();
+//   *free = allocator->get_free_space();
+//   *total = allocator->get_mem_limit();
+//   return cudaSuccess;
+// }
 
 __host__ cudaError_t cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, void **args, size_t sharedMem, cudaStream_t stream) {
   return cudaSuccess;

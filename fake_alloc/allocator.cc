@@ -38,13 +38,17 @@ cudaError_t Allocator::malloc(void **devPtr, size_t size) {
   for (auto itr = pool.begin() ; itr != pool.end() ; itr++) {
     if (!itr->used && itr->length() >= aligned_size) {
       // split
+      // printf("[split][before] %lx %lx \n", itr->start, itr->end);
       size_t new_start = itr->start + aligned_size;
-      pool.insert(itr, PoolNode(new_start, itr->end, false));
+      auto itr_next = itr; itr_next++;
+      pool.insert(itr_next, PoolNode(new_start, itr->end, false));
       itr->end = new_start;
       itr->used = true;
+      // printf("[split][after] %lx %lx \n", itr->start, itr->end);
       *devPtr = reinterpret_cast<void*>(itr->start + BASE);
       alloc_ += aligned_size;
       if (alloc_ > alloc_max_) alloc_max_ = alloc_;
+      // printf("[low][malloc] %ld -- %ld, %lu\n", itr->start, itr->end, size);
       return cudaSuccess;
     }
   }
@@ -58,10 +62,15 @@ cudaError_t Allocator::free(void *devPtr) {
   auto ptr = reinterpret_cast<size_t>(devPtr) - BASE;
   auto itr = pool.begin();
   for ( ; itr != pool.end() ; itr++) {
-    if (ptr == itr->start) itr->used = false;
-    break;    
+    if (ptr == itr->start) {
+      itr->used = false;
+      break;  
+    }  
   }
+  assert (itr != pool.end());
+  auto size = itr->length();
   alloc_ -= itr->length();
+  // printf("[free] %ld, %ld -- %ld\n", ptr, itr->start, itr->end);
   auto itr_next = itr; itr_next++;
   while (itr_next != pool.end() && !itr_next->used) {
     itr->end = itr_next->end;
@@ -76,7 +85,6 @@ cudaError_t Allocator::free(void *devPtr) {
     itr_prev = itr;
     itr_prev --;
   }
-  // printf("[free finish]\n");
   return cudaSuccess;
 }
 

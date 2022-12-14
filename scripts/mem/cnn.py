@@ -19,9 +19,9 @@ parser.add_argument('--amp', action="store_true")
 args = parser.parse_args()
 if 'LD_PRELOAD' in os.environ:
     use_fake_alloc = True
-    import fake_alloc
+    # import fake_alloc
     CNN_COMPENSATE = 1690 * 1024 * 1024
-    fake_alloc.set_target_mem_limit(24 * 1024 * 1024 * 1024 - CNN_COMPENSATE)
+    # torch.set_target_mem_limit(24 * 1024 * 1024 * 1024 - CNN_COMPENSATE)
 else:
     use_fake_alloc = False
 
@@ -57,9 +57,9 @@ train()
 torch.cuda.reset_peak_memory_stats()
 time.sleep(1)
 if use_fake_alloc:
-    fake_alloc.reset_max_mem()
     train(args.nitr)
-    print((fake_alloc.max_mem_allocated() + CNN_COMPENSATE) / (1024)**2, torch.cuda.max_memory_reserved() / 1024**2, torch.cuda.max_memory_allocated() / 1024**2)
+    # print((fake_alloc.max_mem_allocated() + CNN_COMPENSATE) / (1024)**2)
+    print((torch.cuda.max_memory_reserved() + CNN_COMPENSATE) / (1024)**2)
 else:
     max_mem = measure_gpu_mem(lambda: train(args.nitr))
-    print(max_mem, torch.cuda.max_memory_allocated() / 1024**2)
+    print(max_mem)
