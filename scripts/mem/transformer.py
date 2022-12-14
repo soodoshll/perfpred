@@ -3,6 +3,7 @@ import argparse
 import torch
 import os
 from perfpred.utils import measure_gpu_mem
+from torch.cuda.amp import GradScaler
 
 from transformers import (
     AutoConfig,
@@ -31,6 +32,7 @@ def parse_args():
         type=int,
         default=5
     )
+    parser.add_argument('--amp', action="store_true")
     args = parser.parse_args()
 
     return args
@@ -55,18 +57,20 @@ def main():
     model.config.pad_token_id = model.config.eos_token_id
     model.to(device)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+    optim = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
     model.train()
     inputs = torch.ones((args.batch_size, args.seq_len), dtype=torch.int64, device=device)
     labels = torch.zeros((args.batch_size, ), dtype=torch.int64, device=device)
+    scaler = GradScaler(enabled=args.amp)
     def train(nitr):
         for _ in range(nitr):
-            outputs = model(input_ids=inputs, labels=labels)
-            loss = outputs.loss
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
+            with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=args.amp):
+                outputs = model(input_ids=inputs, labels=labels)
+                loss = outputs.loss
+            scaler.scale(loss).backward()
+            scaler.step(optim)
+            scaler.update()
         torch.cuda.synchronize()
     if use_fake_alloc:
         train(args.nitr)
