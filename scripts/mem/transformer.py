@@ -41,12 +41,13 @@ def main():
         use_fake_alloc = True
         # import fake_alloc
         TRANSFORMER_COMPENSATE = 1024 * 1024 * 1024
-        # torch.set_target_mem_limit(24 * 1024 * 1024 * 1024 - CNN_COMPENSATE)
+        torch.cuda.set_target_memory(24 * 1024 * 1024 * 1024 - TRANSFORMER_COMPENSATE)
     else:
         use_fake_alloc = False
     device = 'cuda'
     args = parse_args()
     config = AutoConfig.from_pretrained(args.model)
+    # return
     model = AutoModelForSequenceClassification.from_config(
         # args.model,
         config=config,
