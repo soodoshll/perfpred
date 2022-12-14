@@ -16,10 +16,11 @@ cudaError_t cudaFree(void *devPtr) {
   return allocator->free(devPtr);
 }
 
-cudaError_t cudaMemGetInfo (size_t* free, size_t* total) {
+__host__ cudaError_t cudaMemGetInfo (size_t* free, size_t* total) {
   pytorch_malloc::Allocator *allocator = pytorch_malloc::Allocator::Instance();
   *free = allocator->get_free_space();
   *total = allocator->get_mem_limit();
+  printf("[meminfo] %lu %lu\n", *free, *total);
   return cudaSuccess;
 }
 
