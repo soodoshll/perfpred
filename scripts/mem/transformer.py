@@ -47,8 +47,8 @@ def main():
     device = 'cuda'
     args = parse_args()
     config = AutoConfig.from_pretrained(args.model)
-    model = AutoModelForSequenceClassification.from_pretrained(
-        args.model,
+    model = AutoModelForSequenceClassification.from_config(
+        # args.model,
         config=config,
     )
     model.config.pad_token_id = model.config.eos_token_id
