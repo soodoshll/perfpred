@@ -41,9 +41,9 @@ def parse_args():
 def main():
     if 'LD_PRELOAD' in os.environ:
         use_fake_alloc = True
-        # import fake_alloc
+        import fake_alloc
         TRANSFORMER_COMPENSATE = 1024 * 1024 * 1024
-        torch.cuda.set_target_memory(24 * 1024 * 1024 * 1024 - TRANSFORMER_COMPENSATE)
+        fake_alloc.set_target_mem_limit(24 * 1024 * 1024 * 1024 - TRANSFORMER_COMPENSATE)
     else:
         use_fake_alloc = False
     device = 'cuda'
@@ -74,7 +74,7 @@ def main():
         torch.cuda.synchronize()
     if use_fake_alloc:
         train(args.nitr)
-        print((torch.cuda.max_memory_reserved() + TRANSFORMER_COMPENSATE) / (1024)**2)
+        print((fake_alloc.max_mem_allocated() + TRANSFORMER_COMPENSATE) / (1024)**2)
     else:
         max_mem = measure_gpu_mem(lambda: train(args.nitr))
         print(max_mem)
