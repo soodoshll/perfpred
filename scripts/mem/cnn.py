@@ -19,8 +19,9 @@ parser.add_argument('--amp', action="store_true")
 args = parser.parse_args()
 if 'LD_PRELOAD' in os.environ:
     use_fake_alloc = True
-    # import fake_alloc
+    import fake_alloc
     CNN_COMPENSATE = 1690 * 1024 * 1024
+    fake_alloc.set_target_mem_limit(24 * 1024 * 1024 * 1024 - CNN_COMPENSATE)
     # torch.set_target_mem_limit(24 * 1024 * 1024 * 1024 - CNN_COMPENSATE)
 else:
     use_fake_alloc = False

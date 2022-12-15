@@ -5,7 +5,7 @@
 #include <mutex>
 #include <list>
 
-constexpr size_t BUFFER_SIZE = (size_t)8 * 1024 * 1024 * 1024;
+constexpr size_t BUFFER_SIZE = (size_t)24 * 1024 * 1024 * 1024;
 constexpr size_t INIT_USAGE = 0;
 namespace pytorch_malloc {
 

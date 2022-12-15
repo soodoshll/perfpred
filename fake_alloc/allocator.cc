@@ -11,7 +11,7 @@
 namespace pytorch_malloc {
 
 void Allocator::set_target_mem_limit(size_t size) {
-  // printf("[Fake allocator] Initialized\n");
+  // printf("[Fake allocator] Initialized, size %lu\n", size);
   assert(this->pool.empty());
   this->pool.emplace_back(0, size-INIT_USAGE, false);
   this->target_mem_limit = size;
