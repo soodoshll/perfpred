@@ -16,7 +16,7 @@ do
     sleep 1
 done
 
-for bs in 1 2 4
+for bs in 2 4 6
 do
     model=gpt2-medium
     ret=$($cmd --model $model --seq_len 512 --batch_size $bs 2>/dev/null)
@@ -24,7 +24,7 @@ do
     sleep 1
 done
 
-for bs in 2 4 8
+for bs in 4 8 12
 do
     model=albert-large-v2
     ret=$($cmd --model $model --seq_len 512 --batch_size $bs 2>/dev/null)
