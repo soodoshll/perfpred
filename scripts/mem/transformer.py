@@ -78,11 +78,12 @@ def main():
         torch.cuda.synchronize()
     if use_fake_alloc:
         train(args.nitr)
-        # print((fake_alloc.max_mem_allocated() + TRANSFORMER_COMPENSATE) / (1024)**2)
-        print(fake_alloc.max_mem_allocated(), torch.cuda.max_memory_reserved(), torch.cuda.max_memory_allocated())
+        print((fake_alloc.max_mem_allocated() + TRANSFORMER_COMPENSATE) / (1024)**2)
+        # print(fake_alloc.max_mem_allocated(), torch.cuda.max_memory_reserved(), torch.cuda.max_memory_allocated())
     else:
         max_mem = measure_gpu_mem(lambda: train(args.nitr))
-        print(max_mem, torch.cuda.max_memory_reserved(), torch.cuda.max_memory_allocated())
+        print(max_mem / (1024 **2))
+        # , torch.cuda.max_memory_reserved(), torch.cuda.max_memory_allocated())
 
 if __name__ == "__main__":
     main()
