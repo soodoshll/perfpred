@@ -14,6 +14,7 @@ for i in tqdm.trange(10000):
     batch_size = random.choice(batch_size_range)
     image_size = random.choice(image_size_range)
     ret = subprocess.run(args=f'python nas_worker.py {model} {batch_size} {image_size}', shell=True, capture_output=True)
+    print(ret.stderr)
     if ret.returncode == 0:
         mem = float(ret.stdout.split() [-1])
         print(f"{model}, {batch_size}, {image_size}, {mem}")

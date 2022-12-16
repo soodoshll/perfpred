@@ -37,7 +37,7 @@ loss_fn = torch.nn.CrossEntropyLoss()
 
 optim = torch.optim.SGD(model.parameters(), lr=1e-3)
 
-def train_loop(nitr=3):
+def train_loop(nitr=2):
     for _ in range(nitr):
         optim.zero_grad()
         out = model(inputs)[0]
