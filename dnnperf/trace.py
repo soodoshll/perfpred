@@ -20,13 +20,13 @@ class Node(object):
             edge[1] = self.output_size
     
     def backward(self):
-        raise RuntimeError("no corresponding backward function defined" + str(self))
+        raise RuntimeError("no corresponding backward function defined " + str(self))
 
     def hyperparameter_info(self):
-        raise RuntimeError("大変" + str(self))
+        raise RuntimeError("no hyperparameter information defined " + str(self))
 
     def tensor_info(self):
-        raise RuntimeError("大変" + str(self))
+        raise RuntimeError("no tensor information defined " + str(self))
 
 class BPNode(Node):
     def __init__(self, fw):
@@ -76,8 +76,6 @@ class ConvNode(Node):
             batch_size, in_channels, out_channels, in_w, in_h, k_w, k_h, s_w, s_h, p_w, p_h, d_w, d_h,
         ]
 
-        # print(self.hyperparameter_info())
-
     def backward(self):
         return ConvBPNode(self)
 
@@ -93,7 +91,6 @@ class ConvBPNode(BPNode):
 class AddNode(Node):
     def __init__(self, fn):
         super(AddNode, self).__init__()
-        # print(dir(fn))
         # we don't know the input shape here
     
     def fill_edge_feature(self):
@@ -120,7 +117,6 @@ class ActivationNode(Node):
     def __init__(self, fn):
         super(ActivationNode, self).__init__()
 
-        # print(dir(fn))
         if hasattr(fn, '_saved_result'):
             self.result = fn._saved_result
         elif hasattr(fn, '_saved_self'):
@@ -565,7 +561,7 @@ class Graph(object):
         for node in self.nodes:
             type_id = self.node_types.index(type(node))
             node_type.append(type_id)
-            # remember to do one-hot when loading data
+            # remember to do one-hot convertion when loading data
 
             h_feat = torch.tensor(node.hyperparameter_info())
             t_feat = node.tensor_info()
