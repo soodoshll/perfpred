@@ -18,9 +18,9 @@ o = o.sum()
 o.backward()
 optim.zero_grad()
 torch.cuda.synchronize()
-ret = subprocess.Popen(['nvidia-smi','-lms', '100', '--query-gpu=clocks.sm', '-i','0','--format=csv,noheader,nounits', '-f', 'gpu_clock_log.txt'])
+ret = subprocess.Popen(['nvidia-smi','-lms', '50', '--query-gpu=clocks.sm', '-i','0','--format=csv,noheader,nounits', '-f', 'gpu_clock_log.txt'])
 
-nitr = 1000
+nitr = 500 
 t0 = time.time()
 for i in trange(nitr):
     start = torch.cuda.Event(enable_timing=True)
