@@ -73,32 +73,22 @@ with profile(activities=[
             torch.cuda.synchronize()
             t0 = time.time()
             foo()
-            # torch.cuda.synchronize()
-            # if i % 100 == 99:
             dur = time.time() - t0
             if args.clock and (i % 10 == 1):
                 clock_list.append(get_clock())
-                # print(get_clock())
             torch.cuda.synchronize()
-            # if i % 30 == 0:
             if i % args.period == 0:
                 time.sleep(args.cooldown)
-# prof.export_chrome_trace("trace.json")
-            # fw_measure.append(dur)
-# print(batch_size, dur, dur_tc)
+
 truth_fw = np.mean(fw_measure) 
 clock_list = np.array(clock_list)
-# truth_bw = np.mean(bw_measure)
 np.savez("data/conv_long_time.npz", fw_measure=fw_measure, clock=clock_list)
 
 avg = np.mean(fw_measure[1:])
 std = np.std(fw_measure[1:])
 print(f"avg: {avg :.2f} | std: {std :.2f}")
 
-# data = np.load('data/conv_long_time.npz')
 
-# fw_measure = data['fw_measure']
-# clock_list = data['clock']
 if args.plot:
     plt.subplots(figsize=(12, 12))
     plt.scatter(range(1, n), fw_measure[1:], marker=".", alpha=0.1)

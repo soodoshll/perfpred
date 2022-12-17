@@ -1,0 +1,37 @@
+import torch
+import torchvision
+import subprocess
+import time
+from perfpred.vgg import build_vgg_model
+import argparse
+import os
+from tqdm import trange
+
+device = 'cuda'
+batch_size = 64
+x = torch.rand(batch_size, 3, 224, 224, device=device)
+model = torchvision.models.vgg13()
+model.to(device)
+optim = torch.optim.SGD(model.parameters(), lr=1e-3)
+o = model(x)
+o = o.sum()
+o.backward()
+optim.zero_grad()
+torch.cuda.synchronize()
+ret = subprocess.Popen(['nvidia-smi','-lms', '100', '--query-gpu=clocks.sm', '-i','0','--format=csv,noheader,nounits', '-f', 'gpu_clock_log.txt'])
+
+nitr = 1000
+t0 = time.time()
+for i in trange(nitr):
+    start = torch.cuda.Event(enable_timing=True)
+    end = torch.cuda.Event(enable_timing=True)
+    start.record()
+    optim.zero_grad()
+    o = model(x)
+    o = o.sum()
+    o.backward()
+    optim.step()
+    end.record()
+    torch.cuda.synchronize()
+    dur = start.elapsed_time(end)
+    print(time.time() - t0, dur)
