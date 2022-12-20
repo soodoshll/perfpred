@@ -6,6 +6,8 @@ import xautodl
 from xautodl.models import get_cell_based_tiny_net
 from nats_bench import create
 
+from torch.nn.utils import skip_init
+
 from perfpred.utils import measure_gpu_mem
 
 import time, os
@@ -59,7 +61,7 @@ def train_loop(nitr=2):
 train_loop() # benchmark
 
 torch.cuda.reset_peak_memory_stats()
-train_loop(10)
+train_loop(3)
 
 print((torch.cuda.max_memory_reserved() + CNN_COMPENSATE) / (1024)**2)
 exit(0)

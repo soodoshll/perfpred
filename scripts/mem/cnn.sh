@@ -8,6 +8,15 @@ then
     cmd="env LD_PRELOAD=./fake_libcudart.so "$cmd
 fi
 
+for bs in {8..128..8}
+do
+    ret=$($cmd resnet18 --batch_size $bs 2>/dev/null)
+    echo resnet18, $bs, $ret
+    sleep 1
+done
+
+exit
+
 for bs in 32 64 128
 do
     ret=$($cmd resnet50 --batch_size $bs 2>/dev/null)

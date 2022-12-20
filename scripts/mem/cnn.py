@@ -7,6 +7,9 @@ from perfpred.utils import measure_gpu_mem
 from torch.cuda.amp import GradScaler
 import time
 
+torch.cuda.initialized = True
+torch.cuda.is_available()
+torch.cuda.set_device(0)
 torch.backends.cudnn.benchmark = True
 
 parser = argparse.ArgumentParser()
