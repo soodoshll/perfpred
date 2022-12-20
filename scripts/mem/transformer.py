@@ -82,8 +82,7 @@ def main():
         # print(fake_alloc.max_mem_allocated(), torch.cuda.max_memory_reserved(), torch.cuda.max_memory_allocated())
     else:
         max_mem = measure_gpu_mem(lambda: train(args.nitr))
-        print(max_mem)
-        # , torch.cuda.max_memory_reserved(), torch.cuda.max_memory_allocated())
+        print(max_mem, torch.cuda.max_memory_reserved(), torch.cuda.max_memory_allocated())
 
 if __name__ == "__main__":
     main()

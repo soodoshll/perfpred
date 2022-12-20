@@ -35,28 +35,10 @@ def load_data(filenames):
                     break
     return rows
 
-# data = load_data(["data/conv_2080ti_fp16_0.data"])
 data = load_data([args.filename])
-# data = data[-30:]
-# print(data)
-# batch_size = 32
-# in_channels = 64
-# image_size = 224
 warm_up = 1
 nitr = 3
 
-# out_channels = 64
-# model = nn.Conv2d(in_channels, out_channels, 3, bias=False)
-# # model = torchvision.models.resnet18()
-# model.to(device)
-# x = torch.rand((batch_size, in_channels, image_size, image_size), device=device)
-# model(x)
-
-# # model, optim = amp.initialize(model, optim, opt_level="O3")
-# scaler = torch.cuda.amp.GradScaler()
-
-# scaler = torch.cuda.amp.GradScaler()
-# for d in data:
 n = 20
 
 err_fw_list = []
@@ -70,11 +52,9 @@ for i in range(n):
         idx = random.randint(0, len(data)-1)
     d = data[idx]
     dur_fw, dur_bw, _, use_fp16, batch_size, kernel_size, image_size, in_channels, out_channels, stride, padding = d
-    # print(d)
 
     x = torch.rand((batch_size, in_channels, image_size, image_size), device=device, requires_grad=True, dtype=dtype)
     model = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False, device=device)
-    # model(x)
     fw_measure = []
     bw_measure = []
     def analyze(prof):
@@ -117,4 +97,3 @@ for i in range(n):
 
 print("forward error:", np.mean(err_fw_list))
 print("backward errpr:", np.mean(err_bw_list))
-# prof.export_chrome_trace("trace_tc.json")

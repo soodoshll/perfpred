@@ -22,7 +22,7 @@ o = model(x)
 torch.cuda.synchronize()
 ret = subprocess.Popen(['nvidia-smi','-lms', '50', '--query-gpu=clocks.sm', '-i','0','--format=csv,noheader,nounits', '-f', 'conv_long_clock.txt'])
 
-nitr = 6000 
+nitr = 80000 
 t0 = time.time()
 for i in trange(nitr):
     start = torch.cuda.Event(enable_timing=True)

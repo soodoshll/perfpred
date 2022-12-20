@@ -24,19 +24,19 @@ do
     sleep 1
 done
 
-for bs in 32 64 96
-do
-    ret=$($cmd densenet201 --batch_size $bs 2>/dev/null)
-    echo densenet201, $bs, $ret
-    sleep 1
-done
+# for bs in 32 64 96
+# do
+#     ret=$($cmd densenet201 --batch_size $bs 2>/dev/null)
+#     echo densenet201, $bs, $ret
+#     sleep 1
+# done
 
-for bs in 64 128 256
-do
-    ret=$($cmd mobilenet_v3_large --batch_size $bs 2>/dev/null)
-    echo  mobilenet_v3_large, $bs, $ret
-    sleep 1
-done
+# for bs in 64 128 256
+# do
+#     ret=$($cmd mobilenet_v3_large --batch_size $bs 2>/dev/null)
+#     echo  mobilenet_v3_large, $bs, $ret
+#     sleep 1
+# done
 
 # for bs in 32 64 128
 # do
