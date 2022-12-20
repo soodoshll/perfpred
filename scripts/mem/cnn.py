@@ -63,4 +63,4 @@ if use_fake_alloc:
     print((torch.cuda.max_memory_reserved() + CNN_COMPENSATE) / (1024)**2)
 else:
     max_mem = measure_gpu_mem(lambda: train(args.nitr))
-    print(max_mem)
+    print(max_mem, torch.cuda.max_memory_reserved() / (1024**2), torch.cuda.max_memory_allocated() / (1024 ** 2))

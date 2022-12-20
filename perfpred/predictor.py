@@ -36,7 +36,7 @@ class ExpLayer(nn.Module):
     def forward(self, x):
         return torch.exp(x) 
 
-def make_mlp(device, input_dim, hidden_layers=[1024] * 8  , activation=nn.ReLU):
+def make_mlp(device, input_dim, hidden_layers=[1024] * 8, activation=nn.ReLU):
     layers = []
     last = input_dim
     for idx, h in enumerate(hidden_layers):
@@ -104,7 +104,7 @@ class Predictor(object):
         test_set_size = self.dataset.shape[0] - train_set_size
         self.train_set, self.test_set = torch.utils.data.random_split(self.dataset, [train_set_size, test_set_size])
 
-    def train(self, model_path, batch_size=512, num_epoch=30, hooks=[]):
+    def train(self, model_path, batch_size=512, num_epoch=30, hooks=[], verbose=1):
         model = self.model
         model.to(self.device)
         model.train()
@@ -132,7 +132,8 @@ class Predictor(object):
                 for hook in hooks:
                     hook()
                 test_error = self.test_set_error()
-                print(f"[{epoch_idx}/{num_epoch}] \t train: {loss.detach().cpu().numpy() : .5f} test: {test_error : .5f} | truth: {labels[0] :.2f}, pred: {out[0] :.2f}", file=sys.stderr)
+                if verbose > 0:
+                    print(f"[{epoch_idx}/{num_epoch}] \t train: {loss.detach().cpu().numpy() : .5f} test: {test_error : .5f} | truth: {labels[0] :.2f}, pred: {out[0] :.2f}", file=sys.stderr)
                 # early stop
                 if epoch_idx == 0 or test_error < lowest_err:
                     lowest_err = test_error
@@ -360,12 +361,7 @@ class Conv2DPredictor(Predictor):
                             else:
                                 dur_forward, dur_backward, dx, use_fp16, batch_size, kernel_size, image_size, in_channels, out_channels, stride, padding = obj
                             if 5 * dur_forward < dur_backward:
-                                # print("eliminate outliners")
                                 continue
-                            # if kernel_size == 7 or kernel_size == 6:
-                                # cnt += 1
-                            # else:
-                                # continue
                             rows = rows_fp16 if use_fp16 else rows_fp32
                             rows.append(
                                 (0, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, 1, use_fp16, dur_forward)
@@ -376,20 +372,12 @@ class Conv2DPredictor(Predictor):
                             )
                     except (EOFError):
                         break
-        print(cnt)
         min_len = min(len(rows_fp16), len(rows_fp32))
-        # print(f"fp16: {len(rows_fp16)} | fp32: {len(rows_fp32)} | min len : {min_len}")
         rows = rows_fp16[-min_len:] + rows_fp32[-min_len:]
-
-        # rows = rows_fp16
-
-        # print(len(rows))
         self.raw_dataset = torch.tensor(rows, dtype=torch.float32)
-        # print("max bs:", torch.max(self.raw_dataset[:, 1]))
-        # print("datasize:", len(self.raw_dataset))
 
         self.dataset = self.raw_dataset 
-
+        # print("data loaded:", len(self.dataset))
         self.avgs = torch.mean(self.raw_dataset, axis=0)
         self.stds = torch.std(self.raw_dataset, axis=0)
         self.avgs[-1] = 0

@@ -86,12 +86,10 @@ def get_children_kernel_time2(event):
         for kernel in event.kernels:
             start_list.append(kernel.time_range.start)
             end_list.append(kernel.time_range.end)
-            # print(start_list, end_list)
         for child in event.cpu_children:
             get_children_kernel_start_and_end(child, start_list, end_list)
     start_list, end_list = [], []
     get_children_kernel_start_and_end(event, start_list, end_list)
-    # print(start_list, end_list)
     if len(start_list) == 0 or len(end_list) == 0:
         return 0
     start = min(start_list)
@@ -411,7 +409,7 @@ class BatchNormMeasure(Measure):
         if use_fp16:
             self.scaler = torch.cuda.amp.GradScaler()
         with open(filename, 'ab+') as f:
-            for _ in range(step):
+            for _ in trange(step):
                 success = False
                 while not success:
                     success = True
@@ -690,7 +688,6 @@ if __name__ == '__main__':
     global cooldown
     cooldown = args.cooldown
 
-    # mp_measure(mp_measure_batchnorm, num_gpus=4)
     if args.op == "conv2d":
         mp_measure(mp_measure_conv, args)
     elif args.op == "mm":
