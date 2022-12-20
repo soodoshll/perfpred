@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import argparse
 from torch.nn.utils import skip_init
-from perfpred.utils import remove_initialization, parse_mem_log
+from perfpred.utils import remove_initialization, parse_mem_log, measure_gpu_mem
 import os
 import subprocess
 from subprocess import PIPE, STDOUT
@@ -56,14 +56,7 @@ if use_fake_alloc:
     train(args.nitr)
     print(fake_alloc.max_mem_allocated() / (1024)**2 + 1024)
 else:
-    if os.path.isfile("log_mem.tmp"):
-        os.remove("log_mem.tmp")
-    monitor_proc = subprocess.Popen(['nvidia-smi', '-lms', '10', '--query-compute-apps=pid,used_gpu_memory', '--format=csv', '-f', 'log_mem.tmp'])
-    train(args.nitr)
-    monitor_proc.terminate()
-    time.sleep(1)
-    max_mem = parse_mem_log("log_mem.tmp", os.getpid())
-    os.remove("log_mem.tmp")
-    print(max_mem)
+    max_mem = measure_gpu_mem(train)
+    print(max_mem, torch.cuda.max_memory_reserved() / (1024**2), torch.cuda.max_memory_allocated() / (1024 ** 2))
 # ret = monitor_proc.communicate()[0]
 # print(len(ret))
