@@ -8,7 +8,7 @@ then
     cmd="env LD_PRELOAD=./fake_libcudart.so "$cmd
 fi
 
-for bs in {1..32..1}
+for bs in {1..32..1} ; do
     model=bert-base-uncased
     ret=$($cmd --model $model --seq_len 512 --batch_size $bs 2>/dev/null)
     echo $model, $bs, $ret
