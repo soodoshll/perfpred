@@ -17,7 +17,7 @@ with open(DATA_FILE) as f:
         batch_size = int(tokens[1])
         image_size = int(tokens[2])
         mem = float(tokens[3])
-        if cnt in test_id:
+        if cnt in test_id and cnt > 1063:
             data.append([model_id, batch_size, image_size, mem])
         cnt += 1
 
