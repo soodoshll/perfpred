@@ -535,7 +535,8 @@ class BatchNormPredictor(Predictor):
                     try:
                         objs = pickle.load(f)
                         for obj in objs:
-                            # print(obj)
+                            if not isinstance(obj, tuple):
+                                continue
                             dur_forward, dur_backward, use_fp16, batch_size, image_size, channels = obj
                             rows = rows_fp16 if use_fp16 else rows_fp32
                             rows.append(
