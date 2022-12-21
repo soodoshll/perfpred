@@ -269,7 +269,7 @@ class LinearPredictor(Predictor):
 class BatchMatMulPredict(Predictor):
     def __init__(self, device=torch.device('cpu')):
         self.feature_name = ['batch', 'l', 'm', 'n', 'is_forward', 'use_fp16']
-        self.model = make_mlp(device, len(self.feature_name))
+        self.model = make_mlp(device, len(self.feature_name) + 8 * 4)
         self.device = device
 
     def load_data(self, filenames):
@@ -314,6 +314,40 @@ class BatchMatMulPredict(Predictor):
         test_set_size = self.dataset.shape[0] - train_set_size
         self.train_set, self.test_set = torch.utils.data.random_split(self.dataset, [train_set_size, test_set_size]) 
 
+    def preprocess(self, data):
+        if not self.modulo:
+            return (data - self.avgs[:-1]) / self.stds[:-1]
+        if len(data.shape) == 2:
+            batchsize = data[:, 0].type(torch.int64)
+            l = data[:, 1].type(torch.int64)
+            m = data[:, 2].type(torch.int64)
+            n = data[:, 3].type(torch.int64)
+        else:
+            batchsize = data[0].type(torch.int64)
+            l = data[1].type(torch.int64)
+            m = data[2].type(torch.int64)
+            n = data[3].type(torch.int64)
+
+        batchsize_mod = batchsize % 8
+        batchsize_mod = nn.functional.one_hot(batchsize_mod, 8)
+
+        l_mod = l % 8
+        m_mod = m % 8
+        n_mod = n % 8
+
+        l_mod = nn.functional.one_hot(l_mod, 8)
+        m_mod = nn.functional.one_hot(m_mod, 8)
+        n_mod = nn.functional.one_hot(n_mod, 8)
+
+        data = (data - self.avgs[:-1]) / self.stds[:-1]
+        
+        inputs = torch.concat((data, 
+            batchsize_mod.type(torch.float32),
+            l_mod.type(torch.float32),
+            m_mod.type(torch.float32),
+            ), axis=-1)
+        # print(inputs.shape)
+        return inputs
 def modpos(n, m, zero_base = True):
     n = n % m
     if zero_base:

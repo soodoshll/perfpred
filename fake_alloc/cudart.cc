@@ -1,4 +1,5 @@
 #include <cuda_runtime_api.h>
+#include <cuda.h>
 #include "allocator.h"
 #include <cstdio>
 #include <cudnn.h>
@@ -25,7 +26,13 @@ extern "C" {
 // }
 
 __host__ cudaError_t cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, void **args, size_t sharedMem, cudaStream_t stream) {
+  // printf("you're fucked, launching kernel\n");
   return cudaSuccess;
+}
+
+CUresult cuLaunchKernel ( CUfunction f, unsigned int  gridDimX, unsigned int  gridDimY, unsigned int  gridDimZ, unsigned int  blockDimX, unsigned int  blockDimY, unsigned int  blockDimZ, unsigned int  sharedMemBytes, CUstream hStream, void** kernelParams, void** extra ) {
+  // printf("you're fucked, culaunching kernel\n");
+  return CUDA_SUCCESS;
 }
 
 // cudnnStatus_t cudnnCreateTensorDescriptor(
@@ -36,17 +43,17 @@ __host__ cudaError_t cudaLaunchKernel(const void* func, dim3 gridDim, dim3 block
 //       return CUDNN_STATUS_SUCCESS;
 //     }
 
-__host__ cudaError_t cudaMemcpy(void *dst, const void *src, size_t count, cudaMemcpyKind kind) {
-  return cudaSuccess;
-}
+// __host__ cudaError_t cudaMemcpy(void *dst, const void *src, size_t count, cudaMemcpyKind kind) {
+//   return cudaSuccess;
+// }
 
-__host__ cudaError_t cudaMemsetAsync(void *devPtr, int value, size_t count, cudaStream_t stream) {
-  return cudaSuccess;
-}
+// __host__ cudaError_t cudaMemsetAsync(void *devPtr, int value, size_t count, cudaStream_t stream) {
+//   return cudaSuccess;
+// }
 
-__host__ cudaError_t cudaMemcpyAsync(void *dst, const void *src, size_t count, cudaMemcpyKind kind, cudaStream_t stream) {
-  return cudaSuccess;
-}
+// __host__ cudaError_t cudaMemcpyAsync(void *dst, const void *src, size_t count, cudaMemcpyKind kind, cudaStream_t stream) {
+//   return cudaSuccess;
+// }
 
 // cudnnStatus_t cudnnConvolutionForward(
 //     cudnnHandle_t                       handle,
