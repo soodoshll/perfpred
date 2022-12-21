@@ -20,7 +20,9 @@ CONV2D_PATH_SQL = ["./habitat-data/conv2d/conv2d-RTX2080Ti-0.sqlite", "./habitat
 CONV2D_PATH = glob.glob("./data/eco*/conv_*.data") + glob.glob("./data/conv_*.data")
 MAXPOOL_PATH = glob.glob("./data/maxpool_*.data")
 BATCHNORM_PATH = glob.glob("./data/batchnorm_*.data")
-BMM_PATH = glob.glob("./data/bmm_*.data")
+#BMM_PATH = glob.glob("./data/bmm_*.data")
+BMM_PATH = glob.glob("./data/bmm_t4_fp16_0.data")
+
 
 device = torch.device('cuda')
 
