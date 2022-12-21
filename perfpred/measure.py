@@ -678,11 +678,11 @@ def mp_measure(func, args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("op", choices=["conv2d", "mm", "batchnorm", "maxpool2d", "bmm"])
-    parser.add_argument("device", choices=['2070', '2080ti', 't4', 'v100'])
+    parser.add_argument("device", choices=['2070', '2080ti', 't4', 'v100', '3090'])
     parser.add_argument("--num_gpus", type=int, default=1)
     parser.add_argument("--use_fp16", action="store_true")
     parser.add_argument("--data_dir", type=str, default="./data/")
-    parser.add_argument("--cooldown", type=float, default=0)
+    parser.add_argument("--cooldown", type=float, default=0.01)
 
     args = parser.parse_args()
     global cooldown
