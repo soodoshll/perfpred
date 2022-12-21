@@ -20,8 +20,8 @@ CONV2D_PATH_SQL = ["./habitat-data/conv2d/conv2d-RTX2080Ti-0.sqlite", "./habitat
 CONV2D_PATH = glob.glob("./data/eco*/conv_*.data") + glob.glob("./data/conv_*.data")
 MAXPOOL_PATH = glob.glob("./data/maxpool_*.data")
 BATCHNORM_PATH = glob.glob("./data/batchnorm_*.data")
-#BMM_PATH = glob.glob("./data/bmm_*.data")
-BMM_PATH = glob.glob("./data/bmm_t4_fp16_0.data")
+BMM_PATH = glob.glob("./data/bmm_*.data")
+#BMM_PATH = glob.glob("./data/bmm_t4_fp16_0.data")
 
 
 device = torch.device('cuda')
@@ -269,10 +269,11 @@ class LinearPredictor(Predictor):
                 return 
 
 class BatchMatMulPredict(Predictor):
-    def __init__(self, device=torch.device('cpu')):
+    def __init__(self, device=torch.device('cpu'), modulo=True):
         self.feature_name = ['batch', 'l', 'm', 'n', 'is_forward', 'use_fp16']
         self.model = make_mlp(device, len(self.feature_name) + 8 * 4)
         self.device = device
+        self.modulo = modulo
 
     def load_data(self, filenames):
         rows_fp16 = []
@@ -347,6 +348,7 @@ class BatchMatMulPredict(Predictor):
             batchsize_mod.type(torch.float32),
             l_mod.type(torch.float32),
             m_mod.type(torch.float32),
+            n_mod.type(torch.float32),
             ), axis=-1)
         # print(inputs.shape)
         return inputs
