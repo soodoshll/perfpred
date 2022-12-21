@@ -17,10 +17,12 @@ import sys
 
 LINEAR_PATH = glob.glob("./data/matmul_*.data")
 CONV2D_PATH_SQL = ["./habitat-data/conv2d/conv2d-RTX2080Ti-0.sqlite", "./habitat-data/conv2d/conv2d-RTX2080Ti-1.sqlite"]
-CONV2D_PATH = glob.glob("./data/eco*/conv_*.data") + glob.glob("./data/conv_2080ti*.data")
+CONV2D_PATH = glob.glob("./data/eco*/conv_*.data") + glob.glob("./data/conv_*.data")
 MAXPOOL_PATH = glob.glob("./data/maxpool_*.data")
 BATCHNORM_PATH = glob.glob("./data/batchnorm_*.data")
-BMM_PATH = glob.glob("./data/bmm_*.data")
+#BMM_PATH = glob.glob("./data/bmm_*.data")
+BMM_PATH = glob.glob("./data/bmm_t4_fp16_0.data")
+
 
 device = torch.device('cuda')
 
@@ -569,7 +571,8 @@ class BatchNormPredictor(Predictor):
                     try:
                         objs = pickle.load(f)
                         for obj in objs:
-                            # print(obj)
+                            if not isinstance(obj, tuple):
+                                continue
                             dur_forward, dur_backward, use_fp16, batch_size, image_size, channels = obj
                             rows = rows_fp16 if use_fp16 else rows_fp32
                             rows.append(

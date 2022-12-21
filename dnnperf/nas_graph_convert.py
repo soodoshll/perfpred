@@ -18,8 +18,10 @@ cnt_succ = 0
 with open(in_file) as in_f, open(out_file, 'wb') as out_f:
     data = []
     for line in in_f:
-        cnt += 1
+        if line.strip() == '' or line.startswith('b'):
+            continue
         tokens = line.split(',')
+        cnt += 1
         model_id = int(tokens[0])
         batch_size = int(tokens[1])
         image_size = int(tokens[2])
