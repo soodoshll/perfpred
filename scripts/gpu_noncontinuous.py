@@ -56,11 +56,6 @@ def change_one_dim(
         else:
             dur = timing(lambda : layer(x)) 
         
-        ###
-        if param_name == 'batch_size' and v == 16:
-            print(dur)
-        ###
-
         if args.pred:
             pred_list.append(
                 conv_pred.predict(
@@ -73,7 +68,7 @@ def change_one_dim(
     return np.array([param_range, dur_list, pred_list])
 
 if args.command == 'measure':
-    default = [16, 112, 128, 128, 3, 1, 1]
+    default = [32, 112, 128, 256, 3, 1, 1]
     batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding = default
     # print("warm up")
     # warmup = 1_000
@@ -89,20 +84,24 @@ if args.command == 'measure':
         'batch_size',
         range(1, 65),
     )
+    param_range, dur_list, pred_list = bs_data
+    for i in range(len(param_range)):
+        print(param_range[i],dur_list[i],pred_list[i])
+    # oc_data = change_one_dim(
+    #     default,
+    #     'out_channels',
+    #     range(4, 385, 4),
+    # )
+    # param_range, dur_list, pred_list = oc_data
+    # for i in range(len(param_range)):
+    #     print(param_range[i],dur_list[i],pred_list[i])
+    # ic_data = change_one_dim(
+    #     default,
+    #     'in_channels',
+    #     range(4, 385, 4),
+    # )
 
-    oc_data = change_one_dim(
-        default,
-        'out_channels',
-        range(4, 385, 4),
-    )
-
-    ic_data = change_one_dim(
-        default,
-        'in_channels',
-        range(4, 385, 4),
-    )
-
-    np.savez(log_path, change_batch_size=bs_data, change_out_channels=oc_data, change_in_channels=ic_data)
+    # np.savez(log_path, change_batch_size=bs_data, change_out_channels=oc_data, change_in_channels=ic_data)
 
 elif args.command == 'plot':
     data = np.load(log_path)
