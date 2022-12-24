@@ -252,17 +252,17 @@ class Tracer(object):
         return np.mean(step_time) / 1e3, np.mean(all_kernel_time)/1e3 , unmarked_event, trace_with_dur
         # return conv_time / 1e3
 
-# conv_pred = Conv2DPredictor(True)
-# conv_pred.load_model("./model/predictor_model_conv2d.th")
+conv_pred = Conv2DPredictor(True)
+conv_pred.load_model("./model/predictor_model_conv2d.th")
 
-# linear_pred = LinearPredictor()
-# linear_pred.load_model("./model/predictor_model_linear.th")
+linear_pred = LinearPredictor()
+linear_pred.load_model("./model/predictor_model_linear.th")
 
-# maxpool_pred = MaxPoolingPredictor()
-# maxpool_pred.load_model("./model/predictor_model_maxpool.th")
+maxpool_pred = MaxPoolingPredictor()
+maxpool_pred.load_model("./model/predictor_model_maxpool.th")
 
-# batchnorm_pred = BatchNormPredictor()
-# batchnorm_pred.load_model("./model/predictor_model_batchnorm.th")
+batchnorm_pred = BatchNormPredictor()
+batchnorm_pred.load_model("./model/predictor_model_batchnorm.th")
 
 def predict_using_trace(model, trace, use_fp16=False, verbose=0):
     tot_time = 0

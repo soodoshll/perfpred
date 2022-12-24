@@ -20,7 +20,7 @@ torch_vision_model_revise()
 device = torch.device('cuda')
 parser = argparse.ArgumentParser()
 parser.add_argument("--verbose", type=int, default=0)
-parser.add_argument("--model", choices=['resnet50', 'vgg', 'inception_v3', 'alexnet'], default='vgg')
+parser.add_argument("--model", choices=['resnet50', 'vgg', 'inception_v3', 'alexnet', 'densenet201'], default='vgg')
 parser.add_argument("--batch_size", nargs='+', type=int, default=[8, 16, 32])
 parser.add_argument("--use_fp16", action="store_true")
 parser.add_argument("--nomodulo", action="store_true")
@@ -41,6 +41,8 @@ elif args.model == 'inception_v3':
     model = torchvision.models.inception_v3()
 elif args.model == 'alexnet':
     model = torchvision.models.alexnet()
+elif args.model == 'densenet201':
+    model = torchvision.models.densenet201()
 else:
     raise RuntimeError("not supported")
 
@@ -48,7 +50,7 @@ model.apply(change_inplace_to_false)
 model.to(device)
 loss_fn = nn.CrossEntropyLoss()
 optim = torch.optim.SGD(model.parameters(), lr=1e-3)
-fp16_options = [False, True] if args.use_fp16 else [False]
+fp16_options = [True] if args.use_fp16 else [False]
 # fp16_options = [True]
 first = True
 data = []
