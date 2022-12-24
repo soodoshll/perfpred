@@ -232,13 +232,10 @@ for evt in first_level_ops:
             size_sum = sum([np.prod(i) for i in inputs]) 
             pred = size_sum * perfpred.trace.UNARY_COEFF
             evt_pred_tot += pred
-        # print(evt.name, evt.cuda_time_total/1e3, pred)
         misc_pred_tot += evt_pred_tot
         pred = evt_pred_tot
         misc_tot += evt.cuda_time_total / 1e3
     pred_tot += pred
-
-# tot = timing_cpu(traced_func, 100, 100)
 
 print(pred_tot, root.cpu_time_total/1e3)
 print('misc:', misc_pred_tot, misc_tot)
