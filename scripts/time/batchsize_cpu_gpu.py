@@ -8,6 +8,8 @@ from torch.autograd import DeviceType
 from perfpred.measure import get_children_kernel_time2
 import numpy as np
 
+torch.backends.cudnn.benchmark = True
+
 parser = argparse.ArgumentParser()
 parser.add_argument('batch_size', type=int)
 parser.add_argument('--model', type=str, default="vgg13")
@@ -79,6 +81,9 @@ def train_loop():
     scaler.update()
     torch.cuda.synchronize()
 
+train_loop()
+
+torch.cuda.synchronize()
 with torch.profiler.profile(
     schedule=torch.profiler.schedule(
         wait=2,
@@ -86,7 +91,7 @@ with torch.profiler.profile(
         active=6,
         repeat=1),
     on_trace_ready=analyze_profile,
-    with_stack=True
+    # with_stack=True
 ) as profiler:
     for i in range(15):
         train_loop()
