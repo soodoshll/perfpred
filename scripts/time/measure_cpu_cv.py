@@ -13,6 +13,7 @@ parser.add_argument('--local', choices=['2070', '2080ti', '3090', 't4', 'v100'],
 parser.add_argument('--target', choices=['2070', '2080ti', '3090', 't4', 'v100'], default='2080ti')
 parser.add_argument('--model', type=str, default='resnet50')
 parser.add_argument('--batch_size', type=int, default=1)
+parser.add_argument('--print', action='store_true')
 parser.add_argument('--amp', action='store_true')
 
 torch.backends.cudnn.benchmark = True
@@ -45,7 +46,7 @@ def _get_trainloop(model, device, amp, batch_size=1):
 
 def measure(args):
     device = 'cuda'
-    train_loop = _get_trainloop(args.model, device, args.amp)
+    train_loop = _get_trainloop(args.model, device, args.amp, args.batch_size)
     events = profile_model(train_loop)
     evt_time_dict = {}
 
@@ -91,9 +92,13 @@ def measure(args):
 
     out['GAP'] = tot_gap/1e3
     out['TOT'] = np.mean(tot_time)/1e3
+    if args.print:
+        for op, times in out.items():
+            print(op, times)
 
-    with open(_get_filename(args.local, args.amp), 'wb') as f:
-        pickle.dump(out, f)
+    if not args.print:
+        with open(_get_filename(args.local, args.amp), 'wb') as f:
+            pickle.dump(out, f)
 
 def predict(args):
     device = 'cuda'
@@ -104,7 +109,7 @@ def predict(args):
     gap_ratio = target_op_dict['GAP'] / local_op_dict['GAP']
     tot_ratio = target_op_dict['TOT'] / local_op_dict['TOT']
     print("data loaded", gap_ratio, tot_ratio)
-    train_loop = _get_trainloop(args.model, device, args.amp, args.batch_size)
+    train_loop = _get_trainloop(args.model, device, args.amp, args.batch_size, args.batch_size)
     train_loop()
 
     events = profile_model(train_loop, dump_file="trace_cnn.json")

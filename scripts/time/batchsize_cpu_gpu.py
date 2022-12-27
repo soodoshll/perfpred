@@ -88,15 +88,14 @@ with torch.profiler.profile(
         schedule= torch.profiler.schedule(
             wait=1,
             warmup=5,
-            active=5,
-            repeat=1),
+            active=5),
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
         # with_stack=True,
         # with_modules=True,
         on_trace_ready=analyze_profile,
     # with_stack=True
 ) as profiler:
-    for i in range(15):
+    for i in range(1000):
         train_loop()
         profiler.step()
 profiler.export_chrome_trace('trace_amp.json')
