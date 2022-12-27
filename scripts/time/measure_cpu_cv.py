@@ -109,7 +109,7 @@ def predict(args):
     gap_ratio = target_op_dict['GAP'] / local_op_dict['GAP']
     tot_ratio = target_op_dict['TOT'] / local_op_dict['TOT']
     print("data loaded", gap_ratio, tot_ratio)
-    train_loop = _get_trainloop(args.model, device, args.amp, args.batch_size, args.batch_size)
+    train_loop = _get_trainloop(args.model, device, args.amp, args.batch_size)
     train_loop()
 
     events = profile_model(train_loop, dump_file="trace_cnn.json")
@@ -150,8 +150,8 @@ def predict(args):
     for i in range(len(start_time) - 1):
         gap = start_time[i + 1] - end_time[i]
         tot_gap += gap
-    # for op, t in op_dict.items():
-        # print(op, t, op_pred_dict[op])
+    for op, t in op_dict.items():
+        print(op, t, op_pred_dict[op])
     # print(root.cpu_time_total/1e3)
     print(sum(tot_time)/1e3 + tot_gap * gap_ratio/1e3)
     
