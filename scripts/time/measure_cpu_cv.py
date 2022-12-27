@@ -12,6 +12,7 @@ parser.add_argument('command', choices=['measure', 'predict'])
 parser.add_argument('--local', choices=['2070', '2080ti', '3090', 't4', 'v100'], default='2070')
 parser.add_argument('--target', choices=['2070', '2080ti', '3090', 't4', 'v100'], default='2080ti')
 parser.add_argument('--model', type=str, default='resnet50')
+parser.add_argument('--batch_size', type=int, default=1)
 parser.add_argument('--amp', action='store_true')
 
 torch.backends.cudnn.benchmark = True
@@ -19,16 +20,22 @@ torch.backends.cudnn.benchmark = True
 def _get_filename(device, amp):
     return f"./data/cpu_cnn_{device}_{amp}.data"
 
-def _get_trainloop(model, device, amp):
+def _get_trainloop(model, device, amp, batch_size=1):
+    image_size = 299 if model == 'inception_v3' else 224
+    model = getattr(torchvision.models, model)()
+    model.to(device)
     optim = torch.optim.SGD(model.parameters(), lr=1e-3)
     loss_fn = torch.nn.CrossEntropyLoss()
-    inputs = torch.empty((1, 3, 224, 224), device=device)
-    labels = torch.zeros((1, ), dtype=torch.int64, device=device)
+    # print(image_size)
+    inputs = torch.empty((batch_size, 3, image_size, image_size), device=device)
+    labels = torch.zeros((batch_size, ), dtype=torch.int64, device=device)
     scaler = torch.cuda.amp.GradScaler(enabled=amp)
     def train_loop():
         optim.zero_grad()
         with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=amp):
             out = model(inputs)
+            if args.model == 'inception_v3':
+                out = out[0]
             loss = loss_fn(out, labels)
         scaler.scale(loss).backward()
         scaler.step(optim)
@@ -38,11 +45,7 @@ def _get_trainloop(model, device, amp):
 
 def measure(args):
     device = 'cuda'
-    model = getattr(torchvision.models, args.model)()
-    model.to(device)
-
-    train_loop = _get_trainloop(model, device, args.amp)
-
+    train_loop = _get_trainloop(args.model, device, args.amp)
     events = profile_model(train_loop)
     evt_time_dict = {}
 
@@ -100,10 +103,8 @@ def predict(args):
         target_op_dict = pickle.load(f)
     gap_ratio = target_op_dict['GAP'] / local_op_dict['GAP']
     tot_ratio = target_op_dict['TOT'] / local_op_dict['TOT']
-
-    model = getattr(torchvision.models, args.model)()
-    model.to(device)
-    train_loop = _get_trainloop(model, device)
+    print("data loaded", gap_ratio, tot_ratio)
+    train_loop = _get_trainloop(args.model, device, args.amp, args.batch_size)
 
     events = profile_model(train_loop)
     start_time = []
@@ -115,6 +116,7 @@ def predict(args):
             tot_time.append(target_op_dict[evt.name])
         else:
             tot_time.append(tot_ratio * evt.cpu_time_total)
+        print(evt.name, tot_time[-1])
         start_time.append(evt.time_range.start)
         end_time.append(evt.time_range.end)
 
@@ -138,7 +140,7 @@ def predict(args):
     for i in range(len(start_time) - 1):
         gap = start_time[i + 1] - end_time[i]
         tot_gap += gap
-    print(sum(tot_time)/1e3 + tot_gap * gap_ratio)
+    print(sum(tot_time)/1e3 + tot_gap * gap_ratio/1e3)
     
 if __name__ == '__main__':
     args = parser.parse_args()
