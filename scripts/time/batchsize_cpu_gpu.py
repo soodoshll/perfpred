@@ -85,12 +85,15 @@ train_loop()
 
 torch.cuda.synchronize()
 with torch.profiler.profile(
-    schedule=torch.profiler.schedule(
-        wait=2,
-        warmup=2,
-        active=6,
-        repeat=1),
-    on_trace_ready=analyze_profile,
+        schedule= torch.profiler.schedule(
+            wait=1,
+            warmup=5,
+            active=5,
+            repeat=1),
+        activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+        # with_stack=True,
+        # with_modules=True,
+        on_trace_ready=analyze_profile,
     # with_stack=True
 ) as profiler:
     for i in range(15):
