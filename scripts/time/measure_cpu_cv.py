@@ -15,6 +15,7 @@ parser.add_argument('--model', type=str, default='resnet50')
 parser.add_argument('--batch_size', type=int, default=1)
 parser.add_argument('--print', action='store_true')
 parser.add_argument('--amp', action='store_true')
+parser.add_argument('--nitr', type=int, default=100)
 
 torch.backends.cudnn.benchmark = True
 
@@ -47,7 +48,7 @@ def _get_trainloop(model, device, amp, batch_size=1):
 def measure(args):
     device = 'cuda'
     train_loop = _get_trainloop(args.model, device, args.amp, args.batch_size)
-    events = profile_model(train_loop)
+    events = profile_model(train_loop, args.nitr)
     evt_time_dict = {}
 
     start_time = []

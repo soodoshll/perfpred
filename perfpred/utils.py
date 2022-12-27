@@ -155,9 +155,12 @@ def measure_gpu_mem(func):
 
 def _get_all_children(events, root):
     ret = []
-    for evt in events:
+    start_idx = events.index(root)
+    for evt in events[start_idx:]:
         if evt.time_range.start >= root.time_range.start and evt.time_range.end <= root.time_range.end:
             ret.append(evt)
+        if evt.time_range.start > root.time_range.end:
+            break
     return ret
 
 def _get_first_level_ops(trace, root):
