@@ -3,6 +3,7 @@ import torchvision
 import time
 import subprocess
 import os
+from torch.autograd import DeviceType
 
 def timing(func, warmup=3, nitr=20, verbose=0):
     if verbose >= 1:
@@ -151,3 +152,37 @@ def measure_gpu_mem(func):
     max_mem = parse_mem_log("log_mem.tmp", os.getpid())
     os.remove("log_mem.tmp")
     return max_mem
+
+def _get_all_children(events, root):
+    ret = []
+    for evt in events:
+        if evt.time_range.start >= root.time_range.start and evt.time_range.end <= root.time_range.end:
+            ret.append(evt)
+    return ret
+
+def _get_first_level_ops(trace, root):
+    children = _get_all_children(trace, root)
+    first_level_ops = []
+    for evt in children:
+        if evt.device_type == DeviceType.CPU and (evt.cpu_parent is None or evt.cpu_parent == root): # first level operators
+            first_level_ops.append(evt)
+    return first_level_ops
+
+def profile_model(func, nitr=20, device='cuda'):
+    torch.cuda.synchronize(device)
+    with torch.profiler.profile(
+        schedule= torch.profiler.schedule(
+            wait=1,
+            warmup=5,
+            active=nitr,
+            repeat=1),
+        activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+        # with_stack=True,
+        # with_modules=True,
+        record_shapes=True,
+    ) as profiler:
+        for _ in range(nitr + 7):
+            func()
+            profiler.step()
+        torch.cuda.synchronize(device)
+    return profiler.profiler.function_events

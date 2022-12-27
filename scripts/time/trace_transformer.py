@@ -117,11 +117,15 @@ for event in trace:
     if event.name.startswith("ProfilerStep"):
         root = event
 
-children = _get_all_children(trace, root)
-first_level_ops = []
-for evt in children:
-    if evt.device_type == DeviceType.CPU and (evt.cpu_parent is None or evt.cpu_parent == root): # first level operators
-        first_level_ops.append(evt)
+def _get_first_level_ops(trace, root):
+    children = _get_all_children(trace, root)
+    first_level_ops = []
+    for evt in children:
+        if evt.device_type == DeviceType.CPU and (evt.cpu_parent is None or evt.cpu_parent == root): # first level operators
+            first_level_ops.append(evt)
+    return first_level_ops
+
+first_level_ops = _get_first_level_ops(trace, root)
 
 pred_tot = 0
 unknown_tot = 0
