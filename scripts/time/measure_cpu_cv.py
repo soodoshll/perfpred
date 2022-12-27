@@ -67,7 +67,7 @@ def measure(args):
             first_level_ops = _get_first_level_ops(events, root)
             tot_time.append(root.cpu_time_total)
             for op in first_level_ops:
-                if op == root:
+                if op == root or op.name == 'cudaDeviceSynchronize':
                     continue
                 if op.name.startswith('Optimizer.step'):
                     for c in op.cpu_children:
@@ -105,18 +105,21 @@ def predict(args):
     tot_ratio = target_op_dict['TOT'] / local_op_dict['TOT']
     print("data loaded", gap_ratio, tot_ratio)
     train_loop = _get_trainloop(args.model, device, args.amp, args.batch_size)
+    train_loop()
 
-    events = profile_model(train_loop)
+    events = profile_model(train_loop, dump_file="trace_cnn.json")
     start_time = []
     end_time = [] 
     tot_time = []
+    op_dict = {}
 
     def _add_event(evt):
         if evt in target_op_dict:
             tot_time.append(target_op_dict[evt.name])
         else:
             tot_time.append(tot_ratio * evt.cpu_time_total)
-        print(evt.name, tot_time[-1])
+        # print(evt.name, tot_time[-1])
+        op_dict[evt.name] = op_dict.get(evt.name, 0) + evt.cpu_time_total
         start_time.append(evt.time_range.start)
         end_time.append(evt.time_range.end)
 
@@ -125,7 +128,7 @@ def predict(args):
             break
 
     for op in _get_first_level_ops(events, root):
-        if op == root:
+        if op == root or op.name == 'cudaDeviceSynchronize':
             continue
         if op.name.startswith('Optimizer.step'):
             for c in op.cpu_children:
@@ -140,6 +143,8 @@ def predict(args):
     for i in range(len(start_time) - 1):
         gap = start_time[i + 1] - end_time[i]
         tot_gap += gap
+    for op, t in op_dict.items():
+        print(op, t)
     print(sum(tot_time)/1e3 + tot_gap * gap_ratio/1e3)
     
 if __name__ == '__main__':

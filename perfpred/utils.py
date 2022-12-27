@@ -168,7 +168,7 @@ def _get_first_level_ops(trace, root):
             first_level_ops.append(evt)
     return first_level_ops
 
-def profile_model(func, nitr=20, device='cuda'):
+def profile_model(func, nitr=20, device='cuda', dump_file=None):
     torch.cuda.synchronize(device)
     with torch.profiler.profile(
         schedule= torch.profiler.schedule(
@@ -183,6 +183,9 @@ def profile_model(func, nitr=20, device='cuda'):
     ) as profiler:
         for _ in range(nitr + 7):
             func()
+            torch.cuda.synchronize(device)
             profiler.step()
         torch.cuda.synchronize(device)
+    if dump_file is not None:
+        profiler.export_chrome_trace(dump_file)
     return profiler.profiler.function_events
