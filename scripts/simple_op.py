@@ -2,6 +2,7 @@ import torch
 from torch import nn
 import numpy as np
 import time
+import matplotlib
 from matplotlib import pyplot as plt
 import torch.nn.functional as F
 from perfpred.measure import measure_unary_elementwise, measure_binary_elementwise
@@ -53,7 +54,10 @@ ret, _, _, _ = np.linalg.lstsq(
 print(ret, 3*4 / (616e9) * 1e3)
 print(f"{1/ret  * 4 * 3 / 1e6} GB/s")
 
+matplotlib.rcParams['font.family'] = ['serif']
+matplotlib.rcParams['font.size'] = 7
+
 plt.legend()
-plt.xlabel('tensor size')
-plt.ylabel('time')
-plt.savefig('simple_op.png')
+plt.xlabel('Number of Elements')
+plt.ylabel('Time (ms)')
+plt.savefig('figure/simple_op.pdf')

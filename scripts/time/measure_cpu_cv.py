@@ -126,8 +126,8 @@ def predict(args):
         else:
             tot_time.append(tot_ratio * evt.cpu_time_total)
         # print(evt.name, tot_time[-1])
-        op_dict[evt.name] = op_dict.get(evt.name, 0) + evt.cpu_time_total
-        op_pred_dict[evt.name] = op_pred_dict.get(evt.name, 0) + tot_time[-1] 
+        op_dict[evt.name] = op_dict.get(evt.name, []) + [evt.cpu_time_total]
+        op_pred_dict[evt.name] = op_pred_dict.get(evt.name, []) + [tot_time[-1]]
         start_time.append(evt.time_range.start)
         end_time.append(evt.time_range.end)
 
@@ -152,9 +152,10 @@ def predict(args):
         gap = start_time[i + 1] - end_time[i]
         tot_gap += gap
     for op, t in op_dict.items():
-        print(op, t, op_pred_dict[op])
+        print(op, np.mean(t), np.mean(op_pred_dict[op]))
     # print(root.cpu_time_total/1e3)
-    print(sum(tot_time)/1e3 + tot_gap * gap_ratio/1e3)
+    pred = sum(tot_time)/1e3 + tot_gap * gap_ratio/1e3
+    print(f"measured:{root.cpu_time_total/1e3}, predicted:{pred}")
     
 if __name__ == '__main__':
     args = parser.parse_args()
