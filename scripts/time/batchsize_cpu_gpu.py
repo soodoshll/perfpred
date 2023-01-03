@@ -6,6 +6,7 @@ import time
 import torchvision
 from torch.autograd import DeviceType
 from perfpred.measure import get_children_kernel_time2
+from perfpred.utils import timing_cpu
 import numpy as np
 
 torch.backends.cudnn.benchmark = True
@@ -38,12 +39,15 @@ def _get_children_kernel_time(event, marked_kernel=None):
 def analyze_profile(prof):
     events = prof.profiler.function_events
     cnt = 0
+    # print(len(events))
     for evt in events:
         if evt.name == 'ProfilerStep*':
+            # print(evt.name)
             cnt += 1
-            if cnt == 0:
+            if cnt == 1:
                 continue
             children = _get_all_children(events, evt)
+            print("number of cpu functions:", len(children))
             gpu_time = 0
             cpu_time = total_time = evt.cpu_time_total
             # for child in evt.cpu_children:
@@ -95,8 +99,12 @@ with torch.profiler.profile(
         on_trace_ready=analyze_profile,
     # with_stack=True
 ) as profiler:
-    for i in range(1000):
+    for i in range(100):
         train_loop()
         profiler.step()
-profiler.export_chrome_trace('trace_amp.json')
+# analyze_profile(profiler)
+# profiler.export_chrome_trace('trace_amp.json')
 print(f"{np.mean(cpu_times)/1e3 : .2f}, {np.mean(gpu_times)/1e3 : .2f}, {np.mean(total_times)/1e3 :.2f}")
+
+dur = timing_cpu(train_loop, 100, 100)
+print(dur)

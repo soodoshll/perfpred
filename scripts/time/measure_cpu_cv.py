@@ -44,7 +44,6 @@ def _get_trainloop(model, device, amp, batch_size=1):
         scaler.update()
     return train_loop
 
-
 def measure(args):
     device = 'cuda'
     train_loop = _get_trainloop(args.model, device, args.amp, args.batch_size)

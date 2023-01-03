@@ -20,7 +20,8 @@ torch_vision_model_revise()
 device = torch.device('cuda')
 parser = argparse.ArgumentParser()
 parser.add_argument("--verbose", type=int, default=0)
-parser.add_argument("--model", choices=['resnet50', 'vgg', 'inception_v3', 'alexnet', 'densenet201'], default='vgg')
+# parser.add_argument("--model", choices=['resnet50', 'vgg', 'inception_v3', 'alexnet', 'densenet201'], default='vgg')
+parser.add_argument("--model", type=str, default='resnet18')
 parser.add_argument("--batch_size", nargs='+', type=int, default=[8, 16, 32])
 parser.add_argument("--use_fp16", action="store_true")
 parser.add_argument("--nomodulo", action="store_true")
@@ -33,18 +34,19 @@ if args.nomodulo:
     trace.conv_pred = Conv2DPredictor(False)
     trace.conv_pred.load_model("./model/predictor_model_conv2d_nomodulo.th")
 
-if args.model == 'vgg':
-    model = build_vgg_model(True)
-elif args.model == 'resnet50':
-    model = torchvision.models.resnet50()
-elif args.model == 'inception_v3':
-    model = torchvision.models.inception_v3()
-elif args.model == 'alexnet':
-    model = torchvision.models.alexnet()
-elif args.model == 'densenet201':
-    model = torchvision.models.densenet201()
-else:
-    raise RuntimeError("not supported")
+model = getattr(torchvision.models, args.model)()
+# if args.model == 'vgg':
+#     model = build_vgg_model(True)
+# elif args.model == 'resnet50':
+#     model = torchvision.models.resnet50()
+# elif args.model == 'inception_v3':
+#     model = torchvision.models.inception_v3()
+# elif args.model == 'alexnet':
+#     model = torchvision.models.alexnet()
+# elif args.model == 'densenet201':
+#     model = torchvision.models.densenet201()
+# else:
+#     raise RuntimeError("not supported")
 
 model.apply(change_inplace_to_false)
 model.to(device)
