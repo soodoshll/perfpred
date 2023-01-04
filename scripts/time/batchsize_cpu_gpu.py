@@ -63,7 +63,7 @@ def analyze_profile(prof):
             cpu_times.append(cpu_time)
 
 bs = args.batch_size
-image_size = 224
+image_size = 299 if args.model == 'inception_v3' else 224
 x = torch.rand((bs, 3, image_size, image_size), device=device)
 scaler = torch.cuda.amp.GradScaler(enabled=args.amp)
 
@@ -79,6 +79,8 @@ def train_loop():
     optim.zero_grad(set_to_none=False)
     with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=args.amp):
         out = model(x)
+        if args.model == 'inception_v3':
+            out = out.logits
         loss = loss_fn(out, t)
     scaler.scale(loss).backward()
     scaler.step(optim)
@@ -99,11 +101,11 @@ with torch.profiler.profile(
         on_trace_ready=analyze_profile,
     # with_stack=True
 ) as profiler:
-    for i in range(100):
+    for i in range(30):
         train_loop()
         profiler.step()
 # analyze_profile(profiler)
-# profiler.export_chrome_trace('trace_amp.json')
+profiler.export_chrome_trace(f'trace_{args.model}_{args.batch_size}_{args.amp}.json')
 print(f"{np.mean(cpu_times)/1e3 : .2f}, {np.mean(gpu_times)/1e3 : .2f}, {np.mean(total_times)/1e3 :.2f}")
 
 dur = timing_cpu(train_loop, 100, 100)
