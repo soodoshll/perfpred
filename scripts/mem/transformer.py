@@ -8,7 +8,11 @@ from torch.cuda.amp import GradScaler
 from transformers import (
     AutoConfig,
     AutoModelForSequenceClassification,
+    Trainer,
+    TrainingArguments,
 )
+
+from datasets import Dataset
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Finetune a transformers model on a text classification task")
@@ -32,9 +36,12 @@ def parse_args():
         type=int,
         default=5
     )
+    parser.add_argument(
+        '--checkpoint',
+        action='store_true'
+    )
     parser.add_argument('--amp', action="store_true")
     args = parser.parse_args()
-
     return args
 
 
@@ -62,26 +69,29 @@ def main():
     model.train()
     inputs = torch.ones((args.batch_size, args.seq_len), dtype=torch.int64, device=device)
     labels = torch.zeros((args.batch_size, ), dtype=torch.int64, device=device)
+    dataset = Dataset.from_dict({'input_ids':inputs, 'labels':labels})
     # scaler = GradScaler(enabled=args.amp)
     scaler = GradScaler(enabled=False)
     # DO NOT USE GRAD SCALER!!!!
-    def train(nitr):
-        for _ in range(nitr):
-            with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=args.amp):
-                outputs = model(input_ids=inputs, labels=labels)
-                loss = outputs.loss
-            # loss.backward()
-            scaler.scale(loss).backward()
-            scaler.step(optim)
-            scaler.update()
-            optim.zero_grad()
+
+    def train(args):
+        training_args = TrainingArguments(
+            "./tmp/", 
+            per_device_train_batch_size=args.batch_size, 
+            gradient_checkpointing=args.checkpoint,
+            num_train_epochs=args.nitr,
+        )
+        trainer = Trainer(model=model, args=training_args, train_dataset=dataset)
+        # for _ in range(args.nitr):
+            # trainer.training_step(model, {'input_ids':inputs, 'labels':labels}) 
+        trainer.train()
         torch.cuda.synchronize()
     if use_fake_alloc:
-        train(args.nitr)
+        train(args)
         print((fake_alloc.max_mem_allocated() + TRANSFORMER_COMPENSATE) / (1024)**2)
         # print(fake_alloc.max_mem_allocated(), torch.cuda.max_memory_reserved(), torch.cuda.max_memory_allocated())
     else:
-        max_mem = measure_gpu_mem(lambda: train(args.nitr))
+        max_mem = measure_gpu_mem(lambda: train(args))
         print(max_mem, torch.cuda.max_memory_reserved(), torch.cuda.max_memory_allocated())
 
 if __name__ == "__main__":
