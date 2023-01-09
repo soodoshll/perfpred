@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from perfpred.measure import measure_unary_elementwise, measure_binary_elementwise
 matplotlib.rcParams['font.family'] = ['serif']
 matplotlib.rcParams['font.size'] = 7
-plt.figure(figsize=(2.5, 2), layout='constrained')
+plt.figure(figsize=(5, 1.5), layout='constrained')
 
 x_range = np.arange(200_000, 11_000_000, 200_000)
 unary_ops = [F.sigmoid, F.relu, F.tanh, lambda x: x+1, F.gelu]
@@ -57,7 +57,7 @@ ret, _, _, _ = np.linalg.lstsq(
 print(ret, 3*4 / (616e9) * 1e3)
 print(f"{1/ret  * 4 * 3 / 1e6} GB/s")
 
-plt.legend()
+plt.legend(ncols=2, loc='upper left')
 plt.xlabel('Number of Elements')
 plt.ylabel('Time (ms)')
 plt.savefig('figure/simple_op.pdf')

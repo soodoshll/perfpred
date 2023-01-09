@@ -5,8 +5,12 @@ import torch
 from torch.autograd import DeviceType
 
 import transformers
-from transformers import BertConfig, BertModel, GPT2Model, GPT2Config, BertForPreTraining, BertForSequenceClassification, GPT2ForSequenceClassification
-from transformers import AutoConfig, AutoModelForSequenceClassification, TrainingArguments, Trainer
+from transformers import (
+    AutoConfig,
+    AutoModelForSequenceClassification,
+    Trainer,
+    TrainingArguments,
+)
 import os
 from ctypes import cdll
 import argparse
@@ -15,11 +19,11 @@ from perfpred.utils import timing_cpu
 import numpy as np
 
 import perfpred.trace
+
 print(perfpred.trace.UNARY_COEFF)
 
 torch.backends.cudnn.benchmark = True
 from perfpred.predictor import Conv2DPredictor, LinearPredictor, MaxPoolingPredictor, BatchNormPredictor, BatchMatMulPredict
-from datasets import Dataset
 
 conv_pred = Conv2DPredictor(True)
 conv_pred.load_model("./model/predictor_model_conv2d.th")
@@ -41,8 +45,10 @@ parser.add_argument('--amp', action='store_true')
 parser.add_argument('--batch_size', type=int, default=8)
 parser.add_argument('--seq_len', type=int, default=512)
 parser.add_argument('--model', type=str)
-parser.add_argument('--checkpoint', action='store_true')
-parser.add_argument('--nitr', type=int, default=1)
+parser.add_argument(
+    '--checkpoint',
+    action='store_true'
+)
 args = parser.parse_args()
 
 device = 'cuda'
@@ -58,17 +64,8 @@ model.to(device)
 model.train()
 
 optim = torch.optim.SGD(model.parameters(), lr=1e-3)
+x = torch.zeros((args.batch_size, args.seq_len), device=device, dtype=torch.int32)
 use_fp16 = args.amp
-training_args = TrainingArguments(
-    "./tmp/", 
-    per_device_train_batch_size=args.batch_size, 
-    gradient_checkpointing=args.checkpoint,
-    num_train_epochs=args.nitr,
-)
-inputs = torch.ones((args.batch_size, args.seq_len), dtype=torch.int64, device=device)
-labels = torch.zeros((args.batch_size, ), dtype=torch.int64, device=device)
-dataset = Dataset.from_dict({'input_ids':inputs, 'labels':labels})
-trainer = Trainer(model=model, args=training_args, train_dataset=dataset)
 
 def lowest_level_func(evt):
     def _lowest_level_func(evt, l):
@@ -117,7 +114,12 @@ def _get_all_children(events, root):
 
 def traced_func():
     torch.cuda.synchronize()
-    trainer.train()
+    optim.zero_grad(set_to_none=True)
+    with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=use_fp16):
+        out = model(x)
+        loss = out['logits'].sum()
+    loss.backward()
+    optim.step()
     torch.cuda.synchronize()
 
 trace = profile_model(traced_func, nitr=1)
