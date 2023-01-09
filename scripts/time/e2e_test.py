@@ -91,7 +91,7 @@ for batch_size in args.batch_size:
             torch.cuda.synchronize()
             del out
         
-        dur_measure = timing_cpu(trace_func, 100, 1000, verbose=0)
+        dur_measure = timing_cpu(trace_func, 100, 100, verbose=0)
         pred, _, truth_kernel_time, trace_with_dur, pred_dur = \
             predict(model, trace_func, use_fp16=use_fp16, verbose=args.verbose)
         print(f"{batch_size}, {use_fp16}, {pred}, {dur_measure}, {truth_kernel_time}")
