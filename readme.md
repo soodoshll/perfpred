@@ -22,7 +22,16 @@ We train a NN-based runtime predictor for complicated (non-elementwise) operator
 **Performance Data Collection**
 
 ```
+python 
 ```
+
+**Model Training**
+
+```
+python
+```
+
+### Tracing and Prediction
 
 ## Memory Prediction
 
