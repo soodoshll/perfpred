@@ -73,7 +73,7 @@ def ExpLoss(output, target, inputs=None):
     loss = torch.abs(torch.exp(output/target) - torch.e)
     return torch.mean(loss)
 
-class Predictor(object):
+class NNPredictor(object):
     def train(self, model_path, batch_size=512, num_epoch=30, hooks=[], verbose=1):
         model = self.model
         model.to(self.device)
@@ -148,7 +148,7 @@ class Predictor(object):
     def preprocess(self, data):
         return (data - self.avgs[:-1]) / self.stds[:-1]
 
-class LinearPredictor(Predictor):
+class LinearPredictor(NNPredictor):
     def __init__(self, device=torch.device('cpu')):
         self.feature_name = ['bias', 'batch', 'in_features', 'out_features', 'is_forward', 'use_fp16']
         self.model = make_mlp(device, len(self.feature_name))
@@ -220,7 +220,7 @@ class LinearPredictor(Predictor):
                 print(n, m, k, dur1)
                 return 
 
-class BatchMatMulPredict(Predictor):
+class BatchMatMulPredict(NNPredictor):
     def __init__(self, device=torch.device('cpu'), modulo=True):
         self.feature_name = ['batch', 'l', 'm', 'n', 'is_forward', 'use_fp16']
         self.model = make_mlp(device, len(self.feature_name) + 8 * 4)
@@ -310,7 +310,7 @@ def modpos(n, m, zero_base = True):
         return n
     return m if n == 0 else n
 
-class Conv2DPredictor(Predictor):
+class Conv2DPredictor(NNPredictor):
     def __init__(self, modulo=True, device=torch.device('cpu')):
         self.feature_name = ['bias', 'batch', 'image_size', 'in_channels', 'out_channels', 'kernel_size',
         'stride', 'padding', 'is_forward', 'use_fp16']
@@ -460,7 +460,7 @@ class Conv2DPredictor(Predictor):
         pred = self.xgb_r.predict(np.array([input.numpy()]))
         return pred[0]
 
-class MaxPoolingPredictor(Predictor):
+class MaxPoolingPredictor(NNPredictor):
     def __init__(self, device=torch.device('cpu')):
         self.feature_name = ['batch_size', 'kernel_size', 'image_size', 'channels', 'stride', 'is_forward', 'use_fp16']
         self.model = make_mlp(device, len(self.feature_name))
@@ -510,7 +510,7 @@ class MaxPoolingPredictor(Predictor):
         test_set_size = self.dataset.shape[0] - train_set_size
         self.train_set, self.test_set = torch.utils.data.random_split(self.dataset, [train_set_size, test_set_size]) 
 
-class BatchNormPredictor(Predictor):
+class BatchNormPredictor(NNPredictor):
     def __init__(self, device=torch.device('cpu')):
         self.feature_name = ['batch_size', 'image_size', 'channels', 'is_forward', 'use_fp16']
         self.model = make_mlp(device, len(self.feature_name))

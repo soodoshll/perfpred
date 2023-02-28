@@ -6,7 +6,6 @@ import re
 
 from .measure import measure_unary_elementwise
 from .predictor import Conv2DPredictor, LinearPredictor, MaxPoolingPredictor, BatchNormPredictor
-# from .utils import get_clock
 
 UNARY_COEFF = 1.50332785e-08 
 UNARY_BIAS = 0
@@ -20,7 +19,6 @@ def measure_simple_op():
         dur = measure_unary_elementwise(n, op=F.relu)
         y.append(dur)
     A = np.vstack([x_range, np.ones(len(x_range))]).T
-    # print(A.shape)
     ret, _, _, _ = np.linalg.lstsq(A, np.array(y), rcond=-1)
     UNARY_COEFF = ret[0]
     UNARY_BIAS = ret[1]
@@ -38,8 +36,6 @@ def profile_model(func, nitr=20, device='cuda'):
             active=nitr,
             repeat=1),
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
-        # with_stack=True,
-        # with_modules=True,
         record_shapes=True,
     ) as profiler:
         for _ in range(nitr + 7):
@@ -51,7 +47,6 @@ def profile_model(func, nitr=20, device='cuda'):
 class Tracer(object):
     def forward_hook(self, record):
         def fun(module, input, output):
-            # print(module)
             if len(list(module.children())) == 0:
                 record.append(
                     (1, module, [None if i is None else i.shape for i in input], True)
@@ -239,128 +234,123 @@ class Tracer(object):
                 bn_time += dur
             if isinstance(module, nn.ReLU):
                 relu_time += dur
-        # print
         acc_grad = np.sum(np.mean(acc_grad, axis=1))
         optim_dur = np.mean(optim_dur)
-        # print(acc_grad)
-        # print(dur_counted, acc_grad, optim_dur)
-        # print((dur_counted + acc_grad + optim_dur) / 1e3, np.mean(step_time) / 1e3)
 
         if verbose >= 1:
             print("Tracing:", conv_time/1e3, linear_time/1e3, pool_time/1e3, bn_time/1e3, relu_time/1e3, acc_grad/1e3 + optim_dur/1e3)
-        # return trace_with_dur, acc_grad, optim_dur, np.mean(step_time) / 1e3
         return np.mean(step_time) / 1e3, np.mean(all_kernel_time)/1e3 , unmarked_event, trace_with_dur
-        # return conv_time / 1e3
 
-conv_pred = Conv2DPredictor(True)
-conv_pred.load_model("./model/predictor_model_conv2d.th")
+class Predictor(object):
+    def load_models(self, device):
+        self.conv_pred = Conv2DPredictor(True)
+        self.conv_pred.load_model(f"./model/{device}/predictor_model_conv2d.th")
 
-linear_pred = LinearPredictor()
-linear_pred.load_model("./model/predictor_model_linear.th")
+        self.linear_pred = LinearPredictor()
+        self.linear_pred.load_model(f"./model/{device}/predictor_model_linear.th")
 
-maxpool_pred = MaxPoolingPredictor()
-maxpool_pred.load_model("./model/predictor_model_maxpool.th")
+        self.maxpool_pred = MaxPoolingPredictor()
+        self.maxpool_pred.load_model(f"./model/{device}/predictor_model_maxpool.th")
 
-batchnorm_pred = BatchNormPredictor()
-batchnorm_pred.load_model("./model/predictor_model_batchnorm.th")
+        self.batchnorm_pred = BatchNormPredictor()
+        self.batchnorm_pred.load_model(f"./model/{device}/predictor_model_batchnorm.th")
 
-def predict_using_trace(model, trace, use_fp16=False, verbose=0):
-    tot_time = 0
-    conv_time = 0
-    linear_time = 0
-    pool_time = 0
-    bn_time = 0
-    relu_time = 0
-    dur_list = []
-    for is_forward, module, input_shapes, dx in trace:
-        pred = None
-        if isinstance(module, nn.Conv2d):
-            input_shape = input_shapes[0]
-            if input_shape == None:
-                for f, m, shape, _ in trace:
-                    if m == module and f:
-                        input_shape = shape[0]
-            pred = conv_pred.predict(
-                [0, input_shape[0], input_shape[2], input_shape[1], module.out_channels, module.kernel_size[0], module.stride[0], module.padding[0], is_forward, use_fp16]
-            ) 
-            if not dx:
-                pred /= 2
-            # print([0, input_shape[0], input_shape[2], input_shape[1], module.out_channels, module.kernel_size[0], module.stride[0], module.padding[0], is_forward, use_fp16])
-            if module.bias is not None:
-                bias_pred = UNARY_COEFF * (input_shape[0] * ((input_shape[2] / module.stride[0]) ** 2) * module.out_channels)
+    def predict_using_trace(self, model, trace, use_fp16=False, verbose=0):
+        tot_time = 0
+        conv_time = 0
+        linear_time = 0
+        pool_time = 0
+        bn_time = 0
+        relu_time = 0
+        dur_list = []
+        for is_forward, module, input_shapes, dx in trace:
+            pred = None
+            if isinstance(module, nn.Conv2d):
+                input_shape = input_shapes[0]
+                if input_shape == None:
+                    for f, m, shape, _ in trace:
+                        if m == module and f:
+                            input_shape = shape[0]
+                pred = self.conv_pred.predict(
+                    [0, input_shape[0], input_shape[2], input_shape[1], module.out_channels, module.kernel_size[0], module.stride[0], module.padding[0], is_forward, use_fp16]
+                ) 
+                if not dx:
+                    pred /= 2
+                # print([0, input_shape[0], input_shape[2], input_shape[1], module.out_channels, module.kernel_size[0], module.stride[0], module.padding[0], is_forward, use_fp16])
+                if module.bias is not None:
+                    bias_pred = UNARY_COEFF * (input_shape[0] * ((input_shape[2] / module.stride[0]) ** 2) * module.out_channels)
+                    if use_fp16:
+                        bias_pred /= 2
+                    pred += bias_pred
+                conv_time += pred
+                tot_time += pred
+            if isinstance(module, nn.Linear):
+                input_shape = input_shapes[0]
+                pred = self.linear_pred.predict(
+                    [module.bias is not None, input_shape[0], input_shape[1], module.out_features, is_forward, use_fp16]
+                )
+                if not dx:
+                    pred /= 2
+                # if module.bias is not None:
+                    # bias_pred = UNARY_COEFF * input_shape[0] * module.out_features
+                    # if use_fp16:
+                    #    bias_pred /= 2 
+                linear_time += pred
+                tot_time += pred
+            if isinstance(module, nn.MaxPool2d):
+                input_shape = input_shapes[0]
+                pred = self.maxpool_pred.predict(
+                    [input_shape[0], module.kernel_size, input_shape[2], input_shape[1], module.stride, is_forward, use_fp16]
+                )
+                pool_time += pred
+                tot_time += pred
+            if isinstance(module, nn.ReLU):
+                input_shape = input_shapes[0]
+                input_size = np.prod(input_shape)
+                if is_forward:
+                    pred = UNARY_COEFF * input_size
+                else:
+                    pred = BINARY_COEFF * input_size
                 if use_fp16:
-                    bias_pred /= 2
-                pred += bias_pred
-            conv_time += pred
-            tot_time += pred
-        if isinstance(module, nn.Linear):
-            input_shape = input_shapes[0]
-            pred = linear_pred.predict(
-                [module.bias is not None, input_shape[0], input_shape[1], module.out_features, is_forward, use_fp16]
-            )
-            if not dx:
-                pred /= 2
-            # if module.bias is not None:
-                # bias_pred = UNARY_COEFF * input_shape[0] * module.out_features
-                # if use_fp16:
-                #    bias_pred /= 2 
-            linear_time += pred
-            tot_time += pred
-        if isinstance(module, nn.MaxPool2d):
-            input_shape = input_shapes[0]
-            pred = maxpool_pred.predict(
-                [input_shape[0], module.kernel_size, input_shape[2], input_shape[1], module.stride, is_forward, use_fp16]
-            )
-            pool_time += pred
-            tot_time += pred
-        if isinstance(module, nn.ReLU):
-            input_shape = input_shapes[0]
-            input_size = np.prod(input_shape)
-            if is_forward:
-                pred = UNARY_COEFF * input_size
-            else:
-                pred = BINARY_COEFF * input_size
-            if use_fp16:
-                pred /= 2
-            tot_time += pred
-            relu_time += pred
-        if isinstance(module, nn.BatchNorm2d):
-            input_shape = input_shapes[0]
-            pred = batchnorm_pred.predict(
-                [input_shape[0], input_shape[2], input_shape[1], is_forward, use_fp16]
-            )
-            tot_time += pred
-            bn_time += pred
-        dur_list.append(pred)
-    
-    # optimizer
-    param_size = 0
-    for param in model.parameters():
-        param_size += np.prod(param.size())
-    optim_time = BINARY_COEFF * param_size 
-    if use_fp16:
-        optim_time /= 2
-    tot_time += optim_time
-
-    if verbose >= 1:
-        print("Predict:", conv_time, linear_time, pool_time, bn_time, relu_time, optim_time)
-    
-    return tot_time, dur_list
-
-def predict(model, trace_func, use_fp16=False, verbose=0, dry_run=5):
-    # dry run
-    for _ in range(dry_run):
-        trace_func()
-    torch.cuda.synchronize()
-    tracer = Tracer()
-    trace = tracer.trace(trace_func)
-    pred, pred_dur = predict_using_trace(model, trace, use_fp16, verbose)
-    events = profile_model(trace_func)
-    truth, truth_kernel_time, unmarked_events, trace_with_dur = tracer.match_trace_and_events(trace, events, verbose=verbose)
-    for evt in unmarked_events:
-        t = BINARY_COEFF * np.prod(evt.input_shapes[0])
+                    pred /= 2
+                tot_time += pred
+                relu_time += pred
+            if isinstance(module, nn.BatchNorm2d):
+                input_shape = input_shapes[0]
+                pred = self.batchnorm_pred.predict(
+                    [input_shape[0], input_shape[2], input_shape[1], is_forward, use_fp16]
+                )
+                tot_time += pred
+                bn_time += pred
+            dur_list.append(pred)
+        
+        # optimizer
+        param_size = 0
+        for param in model.parameters():
+            param_size += np.prod(param.size())
+        optim_time = BINARY_COEFF * param_size 
         if use_fp16:
-            t /= 2
-        pred += t
-    return pred, truth, truth_kernel_time, trace_with_dur, pred_dur
+            optim_time /= 2
+        tot_time += optim_time
 
+        if verbose >= 1:
+            print("Predict:", conv_time, linear_time, pool_time, bn_time, relu_time, optim_time)
+        
+        return tot_time, dur_list
+
+    def predict(self, model, trace_func, use_fp16=False, verbose=0, dry_run=5):
+        # dry run
+        for _ in range(dry_run):
+            trace_func()
+        torch.cuda.synchronize()
+        tracer = Tracer()
+        trace = tracer.trace(trace_func)
+        pred, pred_dur = self.predict_using_trace(model, trace, use_fp16, verbose)
+        events = profile_model(trace_func)
+        truth, truth_kernel_time, unmarked_events, trace_with_dur = tracer.match_trace_and_events(trace, events, verbose=verbose)
+        for evt in unmarked_events:
+            t = BINARY_COEFF * np.prod(evt.input_shapes[0])
+            if use_fp16:
+                t /= 2
+            pred += t
+        return pred, truth, truth_kernel_time, trace_with_dur, pred_dur
