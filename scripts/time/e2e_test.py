@@ -7,7 +7,7 @@ import numpy as np
 from perfpred import trace
 from perfpred.predictor import Conv2DPredictor
 from perfpred.utils import warmup, torch_vision_model_revise, change_inplace_to_false, timing, timing_cpu
-from perfpred.trace import predict
+from perfpred.trace import Predictor
 # from matplotlib import pyplot as plt
 
 
@@ -27,12 +27,11 @@ args = parser.parse_args()
 
 print(args)
 
-if args.nomodulo:
-    trace.conv_pred = Conv2DPredictor(False)
-    trace.conv_pred.load_model("./model/predictor_model_conv2d_nomodulo.th")
+# if args.nomodulo:
+#     trace.conv_pred = Conv2DPredictor(False)
+#     trace.conv_pred.load_model("./model/predictor_model_conv2d_nomodulo.th")
 
 model = getattr(torchvision.models, args.model)()
-
 model.apply(change_inplace_to_false)
 model.to(device)
 loss_fn = nn.CrossEntropyLoss()
@@ -40,10 +39,12 @@ optim = torch.optim.SGD(model.parameters(), lr=1e-3)
 fp16_options = [True] if args.use_fp16 else [False]
 first = True
 data = []
+
 if args.model == 'inception_v3':
     image_size = 299
 else:
     image_size = 224
+
 for batch_size in args.batch_size:
     data_bs = []
     data.append(data_bs)

@@ -40,11 +40,16 @@ We need a modified version of PyTorch, which makes two changes to PyTorch:
 1. Replace the memory allocator with a dummy allocator;
 1. Stop launching most kernels.
 
+After all, we still have an option of non-intrusive mode of memory predictor. However, it might not be as accurate as the intrusive one.
 
 **Building fake cuda runtime**
 ```
 bash scripts/build.sh
 ```
+
+## DNNPerf
+
+As an important baseline we compared to, we reimplemented DNNPerf.
 
 ## Misc
 python dnnperf/fake_runner.py 1003 115 224

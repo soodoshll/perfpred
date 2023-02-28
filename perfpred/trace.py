@@ -242,18 +242,23 @@ class Tracer(object):
         return np.mean(step_time) / 1e3, np.mean(all_kernel_time)/1e3 , unmarked_event, trace_with_dur
 
 class Predictor(object):
-    def load_models(self, device):
+    def __init__(self, target):
+        self.target = target
+        self._load_models()
+     
+    def _load_models(self):
+        target = self.target
         self.conv_pred = Conv2DPredictor(True)
-        self.conv_pred.load_model(f"./model/{device}/predictor_model_conv2d.th")
+        self.conv_pred.load_model(f"./model/{target}/predictor_model_conv2d.th")
 
         self.linear_pred = LinearPredictor()
-        self.linear_pred.load_model(f"./model/{device}/predictor_model_linear.th")
+        self.linear_pred.load_model(f"./model/{target}/predictor_model_linear.th")
 
         self.maxpool_pred = MaxPoolingPredictor()
-        self.maxpool_pred.load_model(f"./model/{device}/predictor_model_maxpool.th")
+        self.maxpool_pred.load_model(f"./model/{target}/predictor_model_maxpool.th")
 
         self.batchnorm_pred = BatchNormPredictor()
-        self.batchnorm_pred.load_model(f"./model/{device}/predictor_model_batchnorm.th")
+        self.batchnorm_pred.load_model(f"./model/{target}/predictor_model_batchnorm.th")
 
     def predict_using_trace(self, model, trace, use_fp16=False, verbose=0):
         tot_time = 0
@@ -276,7 +281,6 @@ class Predictor(object):
                 ) 
                 if not dx:
                     pred /= 2
-                # print([0, input_shape[0], input_shape[2], input_shape[1], module.out_channels, module.kernel_size[0], module.stride[0], module.padding[0], is_forward, use_fp16])
                 if module.bias is not None:
                     bias_pred = UNARY_COEFF * (input_shape[0] * ((input_shape[2] / module.stride[0]) ** 2) * module.out_channels)
                     if use_fp16:

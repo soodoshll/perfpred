@@ -613,18 +613,6 @@ def train(args):
     else:
         raise RuntimeError("Not supported")
 
-def load_model(modulo=True):
-    linear_pred = LinearPredictor()
-    linear_pred.load_model("./model/predictor_model_linear.th")
-
-    conv_pred = Conv2DPredictor(modulo=modulo)
-    conv_pred.load_model("./model/predictor_model_conv2d.th")
-
-    maxpool_pred = MaxPoolingPredictor() 
-    maxpool_pred.load_model("./model/predictor_model_maxpool.th")
-
-    return linear_pred, conv_pred, maxpool_pred
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("op", choices=["conv2d", "mm", "batchnorm", "maxpool2d", "bmm"])
