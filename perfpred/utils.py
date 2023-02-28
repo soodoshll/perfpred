@@ -131,6 +131,8 @@ def remove_initialization():
     for init in initializers:
         exec(f"torch.nn.init.{init} = lambda *args, **kwargs: None")
         exec(f"torch.nn.init.{init}_ = lambda *args, **kwargs: None")
+    
+    exec("torch.Tensor.normal_ = lambda *args, **kwargs: None")
 
 def parse_mem_log(filename, pid):
     max_mem = 0

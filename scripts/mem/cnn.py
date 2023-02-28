@@ -59,7 +59,7 @@ def train(nitr=2):
 # warm up
 train()
 torch.cuda.reset_peak_memory_stats()
-time.sleep(1)
+# time.sleep(1)
 if use_fake_alloc:
     train(args.nitr)
     # print((fake_alloc.max_mem_allocated() + CNN_COMPENSATE) / (1024)**2)

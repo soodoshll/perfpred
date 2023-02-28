@@ -154,6 +154,7 @@ def predict(args):
         print(op, np.mean(t), np.mean(op_pred_dict[op]))
     # print(root.cpu_time_total/1e3)
     pred = sum(tot_time)/1e3 + tot_gap * gap_ratio/1e3
+    # pred /= 1.6
     print(f"measured:{root.cpu_time_total/1e3}, predicted:{pred}")
     
 if __name__ == '__main__':
