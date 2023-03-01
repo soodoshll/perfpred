@@ -175,10 +175,7 @@ class Tracer(object):
                     kernel_time = self._get_children_kernel_time(c, marked_kernel)
                     setattr(c, "module", module)
                     setattr(c, "is_forward", is_forward)
-                    # if tuple_ptr > 0:
-                    #     dur_dict[ptr][-1] += kernel_time
-                    # else:
-                    #     dur_dict[ptr].append(kernel_time)
+                    setattr(c, "input_shapes", trace[ptr][2])
                     if (is_tuple): 
                         tuple_ptr += 1
                     if (not is_tuple or tuple_ptr == len(matching_names)):
@@ -238,7 +235,7 @@ class Predictor(object):
      
     def _load_models(self):
         target = self.target
-        self.conv_pred = Conv2DPredictor(True)
+        self.conv_pred = Conv2DPredictor()
         self.conv_pred.load_model(f"./model/{target}/predictor_model_conv2d.th")
 
         self.linear_pred = LinearPredictor()
@@ -255,7 +252,7 @@ class Predictor(object):
         for child in event.cpu_children:
             self._mark(visited, child)
 
-    def predict_using_trace(self, model, events, use_fp16=False, verbose=0):
+    def predict_using_trace(self, trace, events, use_fp16=False, verbose=0):
         tot_time = 0
         conv_time = 0
         linear_time = 0
@@ -269,18 +266,22 @@ class Predictor(object):
                 break
         children = Tracer._get_all_children(events, event)
         for event in children:
-            pred = None
+            # pred = None
             # print(event)
             if hasattr(event, 'module'):
                 module = event.module
                 is_forward = event.is_forward
                 input_shapes = event.input_shapes
-                print(module, is_forward)
+                # print(module, is_forward)
                 self._mark(visited, event)
 
                 if isinstance(module, nn.Conv2d):
                     # if is_forward:
-                    input_shape = event.cpu_children[0].input_shapes[0]
+                    input_shape = input_shapes[0]
+                    if input_shape == None:
+                        for f, m, shape, _ in trace:
+                            if m == module and f:
+                                input_shape = shape[0]
                     # else:
                         # input_shape = event.input_shapes[0]
                     pred = self.conv_pred.predict(
@@ -295,6 +296,7 @@ class Predictor(object):
                          is_forward,
                          use_fp16]
                     ) 
+                    # print(pred)
 
                     # if module.bias is not None:
                     #     bias_pred = self.UNARY_COEFF * (input_shape[0] * ((input_shape[2] / module.stride[0]) ** 2) * module.out_channels)
@@ -323,21 +325,10 @@ class Predictor(object):
                     )
                     pool_time += pred
                     tot_time += pred
-                # if isinstance(module, nn.ReLU):
-                #     input_shape = input_shapes[0]
-                #     input_size = np.prod(input_shape)
-                #     if is_forward:
-                #         pred = UNARY_COEFF * input_size
-                #     else:
-                #         pred = BINARY_COEFF * input_size
-                #     if use_fp16:
-                #         pred /= 2
-                #     tot_time += pred
-                #     relu_time += pred
                 if isinstance(module, nn.BatchNorm2d):
                     # if is_forward:
                     input_shape = event.cpu_children[0].input_shapes[0]
-                    print(input_shape)
+                    # print(input_shape)
                     # else:
                         # input_shape = event.input_shapes[0]
                     pred = self.batchnorm_pred.predict(
@@ -345,23 +336,15 @@ class Predictor(object):
                     )
                     tot_time += pred
                     bn_time += pred
-            # elif not event in visited:
-            #     if len(event.kernels) > 0 and len(event.input_shapes) > 0:
-            #         input_size = sum([np.prod(s) for s in event.input_shapes])
-            #         pred = input_size * self.UNARY_COEFF
-            #         tot_time += pred
-            #         print(event.name, event.cuda_time, pred)
+                # print(event.name, module, pred)
+            elif not event in visited:
+                if len(event.kernels) > 0 and len(event.input_shapes) > 0:
+                    input_size = sum([np.prod(s) for s in event.input_shapes])
+                    pred = input_size * self.UNARY_COEFF
+                    tot_time += pred
+                    # print(event.name, event.cuda_time, pred)
             # dur_list.append(pred)
         
-        # optimizer
-        # param_size = 0
-        # for param in model.parameters():
-        #     param_size += np.prod(param.size())
-        # optim_time = BINARY_COEFF * param_size 
-        # if use_fp16:
-        #     optim_time /= 2
-        # tot_time += optim_time
-
         if verbose >= 1:
             print("Predict:", conv_time, linear_time, pool_time, bn_time, relu_time)
         
@@ -376,7 +359,7 @@ class Predictor(object):
         trace = tracer.trace(trace_func)
         events = profile_model(trace_func)
         tracer.match_trace_and_events(trace, events, verbose=verbose)
-        pred = self.predict_using_trace(model, events, use_fp16, verbose)
+        pred = self.predict_using_trace(trace, events, use_fp16, verbose)
         return pred
 
     def predict_cpu(self, ):
