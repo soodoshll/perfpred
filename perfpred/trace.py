@@ -23,9 +23,11 @@ def measure_simple_op():
     UNARY_COEFF = ret[0]
     UNARY_BIAS = ret[1]
     BINARY_COEFF = 1.5 * UNARY_COEFF 
+    print(UNARY_COEFF, BINARY_COEFF)
 
-print("Measuring Memory Bandwidth...")
-measure_simple_op()
+if __name__ == "__main__":
+    print("Measuring Memory Bandwidth...")
+    measure_simple_op()
 
 def profile_model(func, nitr=20, device='cuda'):
     torch.cuda.synchronize(device)
@@ -44,9 +46,18 @@ def profile_model(func, nitr=20, device='cuda'):
         torch.cuda.synchronize(device)
     return profiler.profiler.function_events
 
+TRACE_MODULE = (
+    nn.Conv2d,
+    nn.MaxPool2d,
+    nn.Linear,
+    nn.BatchNorm2d, 
+)
+
 class Tracer(object):
     def forward_hook(self, record):
         def fun(module, input, output):
+            if not type(module) in TRACE_MODULE:
+                return
             if len(list(module.children())) == 0:
                 record.append(
                     (1, module, [None if i is None else i.shape for i in input], True)
@@ -55,6 +66,8 @@ class Tracer(object):
     
     def backward_hook(self, record):
         def fun(module, input, output):
+            if not type(module) in TRACE_MODULE:
+                return
             dx = True
             has_grad = False
             for grad_output in output:
@@ -108,26 +121,20 @@ class Tracer(object):
     op_name_mapping = {
         nn.Conv2d : ('autograd::engine::evaluate_function: ConvolutionBackward0', 'aten::conv2d'),
         nn.MaxPool2d : ('autograd::engine::evaluate_function: MaxPool2DWithIndicesBackward0', 'aten::max_pool2d'),
-        nn.ReLU : ('autograd::engine::evaluate_function: ReluBackward0', 'aten::relu'),
+        # nn.ReLU : ('autograd::engine::evaluate_function: ReluBackward0', 'aten::relu'),
         nn.Linear : ('autograd::engine::evaluate_function: (MmBackward0)|(AddmmBackward0)', 'aten::linear'),
-        nn.Flatten : ('autograd::engine::evaluate_function: ReshapeAliasBackward0', 'aten::flatten'),
-        nn.CrossEntropyLoss : (
-            ('autograd::engine::evaluate_function: NllLossBackward0',
-             'autograd::engine::evaluate_function: LogSoftmaxBackward0'), 
-            'aten::cross_entropy_loss'),
+        # nn.Flatten : ('autograd::engine::evaluate_function: ReshapeAliasBackward0', 'aten::flatten'),
+        # nn.CrossEntropyLoss : (
+        #     ('autograd::engine::evaluate_function: NllLossBackward0',
+        #      'autograd::engine::evaluate_function: LogSoftmaxBackward0'), 
+        #     'aten::cross_entropy_loss'),
         nn.BatchNorm2d : ('autograd::engine::evaluate_function: CudnnBatchNormBackward0', 'aten::batch_norm'),
-        nn.AdaptiveAvgPool2d: ('autograd::engine::evaluate_function: MeanBackward1', 'aten::adaptive_avg_pool2d'),
-        nn.Dropout : ("aten::native_dropout_backward", "aten::dropout")
+        # nn.AdaptiveAvgPool2d: ('autograd::engine::evaluate_function: MeanBackward1', 'aten::adaptive_avg_pool2d'),
+        # nn.Dropout : ("aten::native_dropout_backward", "aten::dropout")
     }
-
 
     def match_trace_and_events(self, trace, events, verbose=0):
         # clean the trace, remove unnecessary
-        new_trace = []
-        for item in trace:
-            if not isinstance(item[1], nn.Sequential):
-                new_trace.append(item)
-        dur_dict = [[] for i in range(len(new_trace))]
         acc_grad = []
         optim_dur = []
         step = 0
@@ -135,94 +142,79 @@ class Tracer(object):
         all_kernel_time = []
         for idx, event in enumerate(events):
             if event.name.startswith('ProfilerStep'):
-                # print(event.name, event.self_cpu_time_total)
-                step_kernel_time = 0
-                marked_kernel = set()
-                step_time.append(event.cpu_time_total)
-                children = self._get_all_children(events, event)
-                ptr = 0
-                acc_grad_ptr = 0
-                matching_names = None
-                optim_t = 0
+                break
+    
+        step_kernel_time = 0
+        marked_kernel = set()
+        step_time.append(event.cpu_time_total)
+        children = self._get_all_children(events, event)
+        ptr = 0
+        acc_grad_ptr = 0
+        matching_names = None
+        optim_t = 0
 
-                tuple_ptr = 0
-                
-                # linear_cnt = 0
-                for c in children:
-                    # if c.name.find("dropout") >= 0:
-                        # print(c)
-                    # if c.name.startswith("autograd::engine::evaluate_function") and c.name.find('AccumulateGrad') < 0:
-                        # print(idx, c.name)
-                    step_kernel_time += sum([k.duration for k in c.kernels])
-                    if ptr < len(new_trace):
-                        module = new_trace[ptr][1]
-                        is_forward = new_trace[ptr][0]
-                        while matching_names is None and ptr < len(new_trace):
-                            for t, names in self.op_name_mapping.items():
-                                if isinstance(module, t):
-                                    matching_names = names[is_forward]
-                            assert matching_names is not None, module
-                            # if matching_name is None:
-                            #     ptr += 1
-                            #     module = new_trace[ptr][1]
-                            #     is_forward = new_trace[ptr][0]
-                        # print(matching_names)
-                        is_tuple = isinstance(matching_names, tuple)
-                        matching_name = matching_names[tuple_ptr] if is_tuple else matching_names
-                        # print(matching_name)
-                        if re.match(matching_name, c.name) is not None:
-                            kernel_time = self._get_children_kernel_time(c, marked_kernel)
-                            # kernel_time = c.cuda_time_total
-                            if tuple_ptr > 0:
-                                dur_dict[ptr][-1] += kernel_time
-                            else:
-                                dur_dict[ptr].append(kernel_time)
-                            if (is_tuple): 
-                                tuple_ptr += 1
-                            if (not is_tuple or tuple_ptr == len(matching_names)):
-                                ptr += 1
-                                tuple_ptr = 0
-                                matching_names = None
-                                # if isinstance(new_trace[ptr][1], nn.Linear):
-                                    # linear_cnt += 1
-                                    # print("linear layer", linear_cnt)
-                        # else:
-                            # print(c.name)
-                    if c.name.startswith('Optimizer.step'):
-                        optim_t += self._get_children_kernel_time(c, marked_kernel)
-                    if c.name == 'autograd::engine::evaluate_function: torch::autograd::AccumulateGrad':
-                        kernel_time = self._get_children_kernel_time(c, marked_kernel)
-                        if step == 0:
-                            acc_grad.append([kernel_time])
-                        else:
-                            acc_grad[acc_grad_ptr].append(kernel_time)
-                            acc_grad_ptr += 1
-                
-                all_kernel_time.append(step_kernel_time)
-                
-                unmarked_event = []
-                for c in children:
-                    for kernel in c.kernels:
-                        if not kernel in marked_kernel:
-                            unmarked_event.append(self._find_parent_with_shapes(c))
-                            break
-                # print(unmarked_event)
+        tuple_ptr = 0
+        
+        for c in children:
+            step_kernel_time += sum([k.duration for k in c.kernels])
+            if ptr < len(trace):
+                module = trace[ptr][1]
+                is_forward = trace[ptr][0]
+                while matching_names is None and ptr < len(trace):
+                    for t, names in self.op_name_mapping.items():
+                        if isinstance(module, t):
+                            matching_names = names[is_forward]
+                    assert matching_names is not None, module
+                is_tuple = isinstance(matching_names, tuple)
+                matching_name = matching_names[tuple_ptr] if is_tuple else matching_names
+                if re.match(matching_name, c.name) is not None:
+                    kernel_time = self._get_children_kernel_time(c, marked_kernel)
+                    setattr(c, "module", module)
+                    setattr(c, "is_forward", is_forward)
+                    # if tuple_ptr > 0:
+                    #     dur_dict[ptr][-1] += kernel_time
+                    # else:
+                    #     dur_dict[ptr].append(kernel_time)
+                    if (is_tuple): 
+                        tuple_ptr += 1
+                    if (not is_tuple or tuple_ptr == len(matching_names)):
+                        ptr += 1
+                        tuple_ptr = 0
+                        matching_names = None
 
-                optim_dur.append(optim_t)
-                step += 1
-        # print(dur_dict)
+            if c.name.startswith('Optimizer.step'):
+                optim_t += self._get_children_kernel_time(c, marked_kernel)
+            if c.name == 'autograd::engine::evaluate_function: torch::autograd::AccumulateGrad':
+                kernel_time = self._get_children_kernel_time(c, marked_kernel)
+                if step == 0:
+                    acc_grad.append([kernel_time])
+                else:
+                    acc_grad[acc_grad_ptr].append(kernel_time)
+                    acc_grad_ptr += 1
+        
+        all_kernel_time.append(step_kernel_time)
+        
+        unmarked_event = []
+        for c in children:
+            for kernel in c.kernels:
+                if not kernel in marked_kernel:
+                    unmarked_event.append(self._find_parent_with_shapes(c))
+                    break
+
+        optim_dur.append(optim_t)
+        step += 1
         trace_with_dur = []
         dur_counted = 0
-        for item, dur in zip(new_trace, dur_dict):
-            trace_with_dur.append(item + (np.mean(dur), ))
-            dur_counted += np.mean(dur)
-            # print(np.mean(dur))
-        # print(trace_with_dur)
+        # for item, dur in zip(new_trace, dur_dict):
+        #     trace_with_dur.append(item + (np.mean(dur), ))
+        #     dur_counted += np.mean(dur)
         conv_time = 0
         linear_time = 0
         pool_time = 0
         bn_time = 0
         relu_time = 0
+
+        # for debugging
         for is_forward, module, _, _, dur in trace_with_dur:
             if isinstance(module, nn.Conv2d):
                 conv_time += dur
@@ -234,12 +226,12 @@ class Tracer(object):
                 bn_time += dur
             if isinstance(module, nn.ReLU):
                 relu_time += dur
+
         acc_grad = np.sum(np.mean(acc_grad, axis=1))
         optim_dur = np.mean(optim_dur)
 
         if verbose >= 1:
             print("Tracing:", conv_time/1e3, linear_time/1e3, pool_time/1e3, bn_time/1e3, relu_time/1e3, acc_grad/1e3 + optim_dur/1e3)
-        return np.mean(step_time) / 1e3, np.mean(all_kernel_time)/1e3 , unmarked_event, trace_with_dur
 
 class Predictor(object):
     def __init__(self, target):
@@ -260,7 +252,12 @@ class Predictor(object):
         self.batchnorm_pred = BatchNormPredictor()
         self.batchnorm_pred.load_model(f"./model/{target}/predictor_model_batchnorm.th")
 
-    def predict_using_trace(self, model, trace, use_fp16=False, verbose=0):
+    def _mark(self, visited, event):
+        visited.add(event)
+        for child in event.cpu_children:
+            self._mark(visited, child)
+
+    def predict_using_trace(self, model, events, use_fp16=False, verbose=0):
         tot_time = 0
         conv_time = 0
         linear_time = 0
@@ -268,74 +265,104 @@ class Predictor(object):
         bn_time = 0
         relu_time = 0
         dur_list = []
-        for is_forward, module, input_shapes, dx in trace:
+        visited = set()
+        for idx, event in enumerate(events):
+            if event.name.startswith('ProfilerStep'):
+                break
+        children = Tracer._get_all_children(events, event)
+        for event in children:
             pred = None
-            if isinstance(module, nn.Conv2d):
-                input_shape = input_shapes[0]
-                if input_shape == None:
-                    for f, m, shape, _ in trace:
-                        if m == module and f:
-                            input_shape = shape[0]
-                pred = self.conv_pred.predict(
-                    [0, input_shape[0], input_shape[2], input_shape[1], module.out_channels, module.kernel_size[0], module.stride[0], module.padding[0], is_forward, use_fp16]
-                ) 
-                if not dx:
-                    pred /= 2
-                if module.bias is not None:
-                    bias_pred = UNARY_COEFF * (input_shape[0] * ((input_shape[2] / module.stride[0]) ** 2) * module.out_channels)
+            # print(event)
+            if hasattr(event, 'module'):
+                module = event.module
+                is_forward = event.is_forward
+                input_shapes = event.input_shapes
+                print(module, is_forward)
+                self._mark(visited, event)
+
+                if isinstance(module, nn.Conv2d):
+                    # if is_forward:
+                    input_shape = event.cpu_children[0].input_shapes[0]
+                    # else:
+                        # input_shape = event.input_shapes[0]
+                    pred = self.conv_pred.predict(
+                        [0, 
+                         input_shape[0], 
+                         input_shape[2], 
+                         input_shape[1], 
+                         module.out_channels, 
+                         module.kernel_size[0], 
+                         module.stride[0], 
+                         module.padding[0], 
+                         is_forward,
+                         use_fp16]
+                    ) 
+
+                    if module.bias is not None:
+                        bias_pred = UNARY_COEFF * (input_shape[0] * ((input_shape[2] / module.stride[0]) ** 2) * module.out_channels)
+                        if use_fp16:
+                            bias_pred /= 2
+                        pred += bias_pred
+                    conv_time += pred
+                    tot_time += pred
+                if isinstance(module, nn.Linear):
+                    input_shape = input_shapes[0]
+                    pred = self.linear_pred.predict(
+                        [module.bias is not None, input_shape[0], input_shape[1], module.out_features, is_forward, use_fp16]
+                    )
+                    # if not dx:
+                        # pred /= 2
+                    # if module.bias is not None:
+                        # bias_pred = UNARY_COEFF * input_shape[0] * module.out_features
+                        # if use_fp16:
+                        #    bias_pred /= 2 
+                    linear_time += pred
+                    tot_time += pred
+                if isinstance(module, nn.MaxPool2d):
+                    input_shape = event.cpu_children[0].input_shapes[0]
+                    pred = self.maxpool_pred.predict(
+                        [input_shape[0], module.kernel_size, input_shape[2], input_shape[1], module.stride, is_forward, use_fp16]
+                    )
+                    pool_time += pred
+                    tot_time += pred
+                if isinstance(module, nn.ReLU):
+                    input_shape = input_shapes[0]
+                    input_size = np.prod(input_shape)
+                    if is_forward:
+                        pred = UNARY_COEFF * input_size
+                    else:
+                        pred = BINARY_COEFF * input_size
                     if use_fp16:
-                        bias_pred /= 2
-                    pred += bias_pred
-                conv_time += pred
-                tot_time += pred
-            if isinstance(module, nn.Linear):
-                input_shape = input_shapes[0]
-                pred = self.linear_pred.predict(
-                    [module.bias is not None, input_shape[0], input_shape[1], module.out_features, is_forward, use_fp16]
-                )
-                if not dx:
-                    pred /= 2
-                # if module.bias is not None:
-                    # bias_pred = UNARY_COEFF * input_shape[0] * module.out_features
-                    # if use_fp16:
-                    #    bias_pred /= 2 
-                linear_time += pred
-                tot_time += pred
-            if isinstance(module, nn.MaxPool2d):
-                input_shape = input_shapes[0]
-                pred = self.maxpool_pred.predict(
-                    [input_shape[0], module.kernel_size, input_shape[2], input_shape[1], module.stride, is_forward, use_fp16]
-                )
-                pool_time += pred
-                tot_time += pred
-            if isinstance(module, nn.ReLU):
-                input_shape = input_shapes[0]
-                input_size = np.prod(input_shape)
-                if is_forward:
-                    pred = UNARY_COEFF * input_size
-                else:
-                    pred = BINARY_COEFF * input_size
-                if use_fp16:
-                    pred /= 2
-                tot_time += pred
-                relu_time += pred
-            if isinstance(module, nn.BatchNorm2d):
-                input_shape = input_shapes[0]
-                pred = self.batchnorm_pred.predict(
-                    [input_shape[0], input_shape[2], input_shape[1], is_forward, use_fp16]
-                )
-                tot_time += pred
-                bn_time += pred
+                        pred /= 2
+                    tot_time += pred
+                    relu_time += pred
+                if isinstance(module, nn.BatchNorm2d):
+                    # if is_forward:
+                    input_shape = event.cpu_children[0].input_shapes[0]
+                    print(input_shape)
+                    # else:
+                        # input_shape = event.input_shapes[0]
+                    pred = self.batchnorm_pred.predict(
+                        [input_shape[0], input_shape[2], input_shape[1], is_forward, use_fp16]
+                    )
+                    tot_time += pred
+                    bn_time += pred
+            elif not event in visited:
+                if len(event.kernels) > 0 and len(event.input_shapes) > 0:
+                    input_size = sum([np.prod(s) for s in event.input_shapes])
+                    pred = input_size * UNARY_COEFF
+                    tot_time += pred
+                    print(event.name, event.cuda_time, pred)
             dur_list.append(pred)
         
         # optimizer
-        param_size = 0
-        for param in model.parameters():
-            param_size += np.prod(param.size())
-        optim_time = BINARY_COEFF * param_size 
-        if use_fp16:
-            optim_time /= 2
-        tot_time += optim_time
+        # param_size = 0
+        # for param in model.parameters():
+        #     param_size += np.prod(param.size())
+        # optim_time = BINARY_COEFF * param_size 
+        # if use_fp16:
+        #     optim_time /= 2
+        # tot_time += optim_time
 
         if verbose >= 1:
             print("Predict:", conv_time, linear_time, pool_time, bn_time, relu_time, optim_time)
@@ -349,12 +376,13 @@ class Predictor(object):
         torch.cuda.synchronize()
         tracer = Tracer()
         trace = tracer.trace(trace_func)
-        pred, pred_dur = self.predict_using_trace(model, trace, use_fp16, verbose)
         events = profile_model(trace_func)
-        truth, truth_kernel_time, unmarked_events, trace_with_dur = tracer.match_trace_and_events(trace, events, verbose=verbose)
-        for evt in unmarked_events:
-            t = BINARY_COEFF * np.prod(evt.input_shapes[0])
-            if use_fp16:
-                t /= 2
-            pred += t
-        return pred, truth, truth_kernel_time, trace_with_dur, pred_dur
+        tracer.match_trace_and_events(trace, events, verbose=verbose)
+        pred = self.predict_using_trace(model, events, use_fp16, verbose)
+        return pred
+
+    def predict_cpu(self, ):
+        pass
+
+    def _load_cpu_map(self):
+        pass

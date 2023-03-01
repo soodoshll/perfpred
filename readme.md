@@ -22,13 +22,13 @@ We train a NN-based runtime predictor for complicated (non-elementwise) operator
 **Performance Data Collection**
 
 ```
-python 
+python perfpred/measure.py [--num_gpus 1] [--use_amp] [--data-dir ./data] [--cooldown 0.01]
 ```
 
 **Model Training**
 
 ```
-python
+python perfpred/predictor.py {conv2d,mm,batchnorm,maxpool2d,bmm}
 ```
 
 ### Tracing and Prediction
