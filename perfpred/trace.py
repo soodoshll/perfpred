@@ -25,6 +25,10 @@ def measure_simple_op():
     BINARY_COEFF = 1.5 * UNARY_COEFF 
     print(UNARY_COEFF, BINARY_COEFF)
 
+UNARY_COEFF = {
+    "2080ti":1.463674020617832e-08
+}
+
 if __name__ == "__main__":
     print("Measuring Memory Bandwidth...")
     measure_simple_op()
@@ -193,13 +197,6 @@ class Tracer(object):
                     acc_grad_ptr += 1
         
         all_kernel_time.append(step_kernel_time)
-        
-        unmarked_event = []
-        for c in children:
-            for kernel in c.kernels:
-                if not kernel in marked_kernel:
-                    unmarked_event.append(self._find_parent_with_shapes(c))
-                    break
 
         optim_dur.append(optim_t)
         step += 1
@@ -237,6 +234,7 @@ class Predictor(object):
     def __init__(self, target):
         self.target = target
         self._load_models()
+        self.UNARY_COEFF = UNARY_COEFF[target]
      
     def _load_models(self):
         target = self.target
@@ -298,11 +296,11 @@ class Predictor(object):
                          use_fp16]
                     ) 
 
-                    if module.bias is not None:
-                        bias_pred = UNARY_COEFF * (input_shape[0] * ((input_shape[2] / module.stride[0]) ** 2) * module.out_channels)
-                        if use_fp16:
-                            bias_pred /= 2
-                        pred += bias_pred
+                    # if module.bias is not None:
+                    #     bias_pred = self.UNARY_COEFF * (input_shape[0] * ((input_shape[2] / module.stride[0]) ** 2) * module.out_channels)
+                    #     if use_fp16:
+                    #         bias_pred /= 2
+                    #     pred += bias_pred
                     conv_time += pred
                     tot_time += pred
                 if isinstance(module, nn.Linear):
@@ -325,17 +323,17 @@ class Predictor(object):
                     )
                     pool_time += pred
                     tot_time += pred
-                if isinstance(module, nn.ReLU):
-                    input_shape = input_shapes[0]
-                    input_size = np.prod(input_shape)
-                    if is_forward:
-                        pred = UNARY_COEFF * input_size
-                    else:
-                        pred = BINARY_COEFF * input_size
-                    if use_fp16:
-                        pred /= 2
-                    tot_time += pred
-                    relu_time += pred
+                # if isinstance(module, nn.ReLU):
+                #     input_shape = input_shapes[0]
+                #     input_size = np.prod(input_shape)
+                #     if is_forward:
+                #         pred = UNARY_COEFF * input_size
+                #     else:
+                #         pred = BINARY_COEFF * input_size
+                #     if use_fp16:
+                #         pred /= 2
+                #     tot_time += pred
+                #     relu_time += pred
                 if isinstance(module, nn.BatchNorm2d):
                     # if is_forward:
                     input_shape = event.cpu_children[0].input_shapes[0]
@@ -347,13 +345,13 @@ class Predictor(object):
                     )
                     tot_time += pred
                     bn_time += pred
-            elif not event in visited:
-                if len(event.kernels) > 0 and len(event.input_shapes) > 0:
-                    input_size = sum([np.prod(s) for s in event.input_shapes])
-                    pred = input_size * UNARY_COEFF
-                    tot_time += pred
-                    print(event.name, event.cuda_time, pred)
-            dur_list.append(pred)
+            # elif not event in visited:
+            #     if len(event.kernels) > 0 and len(event.input_shapes) > 0:
+            #         input_size = sum([np.prod(s) for s in event.input_shapes])
+            #         pred = input_size * self.UNARY_COEFF
+            #         tot_time += pred
+            #         print(event.name, event.cuda_time, pred)
+            # dur_list.append(pred)
         
         # optimizer
         # param_size = 0
@@ -365,7 +363,7 @@ class Predictor(object):
         # tot_time += optim_time
 
         if verbose >= 1:
-            print("Predict:", conv_time, linear_time, pool_time, bn_time, relu_time, optim_time)
+            print("Predict:", conv_time, linear_time, pool_time, bn_time, relu_time)
         
         return tot_time, dur_list
 
