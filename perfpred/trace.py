@@ -3,9 +3,11 @@ from torch import nn
 import torch.nn.functional as F
 import numpy as np
 import re
+import pickle
 
 from .measure import measure_unary_elementwise
 from .predictor import Conv2DPredictor, LinearPredictor, MaxPoolingPredictor, BatchNormPredictor
+from .utils import _get_first_level_ops
 
 UNARY_COEFF = 1.50332785e-08 
 UNARY_BIAS = 0
@@ -33,7 +35,7 @@ if __name__ == "__main__":
     print("Measuring Memory Bandwidth...")
     measure_simple_op()
 
-def profile_model(func, nitr=20, device='cuda'):
+def profile_model(func, nitr=3, device='cuda'):
     torch.cuda.synchronize(device)
     with torch.profiler.profile(
         schedule= torch.profiler.schedule(
@@ -227,11 +229,33 @@ class Tracer(object):
         if verbose >= 1:
             print("Tracing:", conv_time/1e3, linear_time/1e3, pool_time/1e3, bn_time/1e3, relu_time/1e3, acc_grad/1e3 + optim_dur/1e3)
 
+def _first_step(events):
+    for event in events:
+        if event.name.startswith('ProfilerStep'):
+            return event
+
+class CPUPredictor(object):
+    def __init__(self, local='2070', target='2080ti', use_amp=False):
+        with open(self._get_filename(local, use_amp), 'rb') as f:
+            self.local_op_dict = pickle.load(f)
+        with open(self._get_filename(target, use_amp), 'rb') as f:
+            self.target_op_dict = pickle.load(f)
+        self.gap_ratio = self.target_op_dict['GAP'] / self.local_op_dict['GAP']
+        self.tot_ratio = self.target_op_dict['TOT'] / self.local_op_dict['TOT']
+
+    def _get_filename(self, device, amp):
+        return f"./data/cpu_cnn_{device}_{amp}.data"
+    
+    def predict(self, evt):
+        return self.target_op_dict.get(evt, self.tot_ratio * evt.cpu_time_total) /  1e3
+
+
 class Predictor(object):
     def __init__(self, target):
         self.target = target
         self._load_models()
         self.UNARY_COEFF = UNARY_COEFF[target]
+        self.cpu_predictor = CPUPredictor(target=target)
      
     def _load_models(self):
         target = self.target
@@ -261,96 +285,101 @@ class Predictor(object):
         relu_time = 0
         dur_list = []
         visited = set()
-        for idx, event in enumerate(events):
-            if event.name.startswith('ProfilerStep'):
-                break
-        children = Tracer._get_all_children(events, event)
-        for event in children:
-            # pred = None
-            # print(event)
-            if hasattr(event, 'module'):
-                module = event.module
-                is_forward = event.is_forward
-                input_shapes = event.input_shapes
-                # print(module, is_forward)
-                self._mark(visited, event)
 
-                if isinstance(module, nn.Conv2d):
-                    # if is_forward:
-                    input_shape = input_shapes[0]
-                    if input_shape == None:
-                        for f, m, shape, _ in trace:
-                            if m == module and f:
-                                input_shape = shape[0]
-                    # else:
-                        # input_shape = event.input_shapes[0]
-                    pred = self.conv_pred.predict(
-                        [0, 
-                         input_shape[0], 
-                         input_shape[2], 
-                         input_shape[1], 
-                         module.out_channels, 
-                         module.kernel_size[0], 
-                         module.stride[0], 
-                         module.padding[0], 
-                         is_forward,
-                         use_fp16]
-                    ) 
-                    # print(pred)
+        root = _first_step(events)
+        children = Tracer._get_all_children(events, root)
+        first_level_ops = _get_first_level_ops(children, root)
+        tot_gpu_time = 0
+        tot_cpu_time = 0
+        for idx, first_level_op in enumerate(first_level_ops):
+            # print(first_level_op.name)
+            if first_level_op.name.startswith("ProfilerStep"):
+                continue
+            gpu_time = 0
+            for event in Tracer._get_all_children(children, first_level_op):
 
-                    # if module.bias is not None:
-                    #     bias_pred = self.UNARY_COEFF * (input_shape[0] * ((input_shape[2] / module.stride[0]) ** 2) * module.out_channels)
-                    #     if use_fp16:
-                    #         bias_pred /= 2
-                    #     pred += bias_pred
-                    conv_time += pred
-                    tot_time += pred
-                if isinstance(module, nn.Linear):
-                    input_shape = input_shapes[0]
-                    pred = self.linear_pred.predict(
-                        [module.bias is not None, input_shape[0], input_shape[1], module.out_features, is_forward, use_fp16]
-                    )
-                    # if not dx:
-                        # pred /= 2
-                    # if module.bias is not None:
-                        # bias_pred = UNARY_COEFF * input_shape[0] * module.out_features
-                        # if use_fp16:
-                        #    bias_pred /= 2 
-                    linear_time += pred
-                    tot_time += pred
-                if isinstance(module, nn.MaxPool2d):
-                    input_shape = event.cpu_children[0].input_shapes[0]
-                    pred = self.maxpool_pred.predict(
-                        [input_shape[0], module.kernel_size, input_shape[2], input_shape[1], module.stride, is_forward, use_fp16]
-                    )
-                    pool_time += pred
-                    tot_time += pred
-                if isinstance(module, nn.BatchNorm2d):
-                    # if is_forward:
-                    input_shape = event.cpu_children[0].input_shapes[0]
-                    # print(input_shape)
-                    # else:
-                        # input_shape = event.input_shapes[0]
-                    pred = self.batchnorm_pred.predict(
-                        [input_shape[0], input_shape[2], input_shape[1], is_forward, use_fp16]
-                    )
-                    tot_time += pred
-                    bn_time += pred
-                # print(event.name, module, pred)
-            elif not event in visited:
-                if len(event.kernels) > 0 and len(event.input_shapes) > 0:
-                    input_size = sum([np.prod(s) for s in event.input_shapes])
-                    pred = input_size * self.UNARY_COEFF
-                    tot_time += pred
-                    # print(event.name, event.cuda_time, pred)
-            # dur_list.append(pred)
+                # GPU time
+                if hasattr(event, 'module'):
+                    module = event.module
+                    is_forward = event.is_forward
+                    input_shapes = event.input_shapes
+                    self._mark(visited, event)
+
+                    if isinstance(module, nn.Conv2d):
+                        input_shape = input_shapes[0]
+                        if input_shape == None:
+                            # the `input` of backward operators are actually the `output`
+                            # so we need to find its corresponding forward operator to
+                            # find the original input size.
+                            for f, m, shape, _ in trace:
+                                if m == module and f:
+                                    input_shape = shape[0]
+                        pred = self.conv_pred.predict(
+                            [0, 
+                            input_shape[0], 
+                            input_shape[2], 
+                            input_shape[1], 
+                            module.out_channels, 
+                            module.kernel_size[0], 
+                            module.stride[0], 
+                            module.padding[0], 
+                            is_forward,
+                            use_fp16]
+                        ) 
+
+                        # Not sure
+                        # if module.bias is not None:
+                        #     bias_pred = self.UNARY_COEFF * (input_shape[0] * ((input_shape[2] / module.stride[0]) ** 2) * module.out_channels)
+                        #     if use_fp16:
+                        #         bias_pred /= 2
+                        #     pred += bias_pred
+                        conv_time += pred
+                        gpu_time += pred
+                    if isinstance(module, nn.Linear):
+                        input_shape = input_shapes[0]
+                        pred = self.linear_pred.predict(
+                            [module.bias is not None, input_shape[0], input_shape[1], module.out_features, is_forward, use_fp16]
+                        )
+                        linear_time += pred
+                        gpu_time += pred
+                    if isinstance(module, nn.MaxPool2d):
+                        input_shape = event.cpu_children[0].input_shapes[0]
+                        pred = self.maxpool_pred.predict(
+                            [input_shape[0], module.kernel_size, input_shape[2], input_shape[1], module.stride, is_forward, use_fp16]
+                        )
+                        pool_time += pred
+                        gpu_time += pred
+                    if isinstance(module, nn.BatchNorm2d):
+                        input_shape = event.cpu_children[0].input_shapes[0]
+                        pred = self.batchnorm_pred.predict(
+                            [input_shape[0], input_shape[2], input_shape[1], is_forward, use_fp16]
+                        )
+                        bn_time += pred
+                        gpu_time += pred
+                elif not event in visited:
+                    if len(event.kernels) > 0 and len(event.input_shapes) > 0:
+                        input_size = sum([np.prod(s) for s in event.input_shapes])
+                        pred = input_size * self.UNARY_COEFF
+                        gpu_time += pred
         
+            # CPU time
+            cpu_time = self.cpu_predictor.predict(first_level_op)
+            tot_cpu_time += cpu_time
+            tot_time = max(tot_time, tot_cpu_time)
+            tot_time += gpu_time
+            tot_gpu_time += gpu_time
+            # print(first_level_op.name, cpu_time)
+
+
         if verbose >= 1:
             print("Predict:", conv_time, linear_time, pool_time, bn_time, relu_time)
         
+        # if idx < len(first_level_ops) - 1:
+            # next_op = 
+            print("CPU Overhead:", tot_cpu_time)
         return tot_time, dur_list
 
-    def predict(self, model, trace_func, use_fp16=False, verbose=0, dry_run=5):
+    def predict(self, model, trace_func, use_fp16=False, verbose=0, dry_run=3):
         # dry run
         for _ in range(dry_run):
             trace_func()
@@ -361,9 +390,3 @@ class Predictor(object):
         tracer.match_trace_and_events(trace, events, verbose=verbose)
         pred = self.predict_using_trace(trace, events, use_fp16, verbose)
         return pred
-
-    def predict_cpu(self, ):
-        pass
-
-    def _load_cpu_map(self):
-        pass
