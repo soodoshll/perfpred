@@ -251,11 +251,12 @@ class CPUPredictor(object):
 
 
 class Predictor(object):
-    def __init__(self, target):
+    def __init__(self, target, use_amp=False):
         self.target = target
         self._load_models()
         self.UNARY_COEFF = UNARY_COEFF[target]
-        self.cpu_predictor = CPUPredictor(target=target)
+        self.cpu_predictor = CPUPredictor(target=target, use_amp=use_amp)
+        self.use_amp = use_amp
      
     def _load_models(self):
         target = self.target
@@ -276,7 +277,8 @@ class Predictor(object):
         for child in event.cpu_children:
             self._mark(visited, child)
 
-    def predict_using_trace(self, trace, events, use_fp16=False, verbose=0):
+    def predict_using_trace(self, trace, events, verbose=0):
+        use_fp16 = self.use_amp
         tot_time = 0
         conv_time = 0
         linear_time = 0
@@ -379,7 +381,7 @@ class Predictor(object):
             print("CPU Overhead:", tot_cpu_time)
         return tot_time, dur_list
 
-    def predict(self, model, trace_func, use_fp16=False, verbose=0, dry_run=3):
+    def predict(self, model, trace_func, verbose=0, dry_run=3):
         # dry run
         for _ in range(dry_run):
             trace_func()
@@ -388,5 +390,5 @@ class Predictor(object):
         trace = tracer.trace(trace_func)
         events = profile_model(trace_func)
         tracer.match_trace_and_events(trace, events, verbose=verbose)
-        pred = self.predict_using_trace(trace, events, use_fp16, verbose)
+        pred = self.predict_using_trace(trace, events, verbose)
         return pred

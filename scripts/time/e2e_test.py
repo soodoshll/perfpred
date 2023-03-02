@@ -46,7 +46,7 @@ if args.model == 'inception_v3':
 else:
     image_size = 224
 
-predictor = Predictor(args.target)
+predictor = Predictor(args.target, use_amp=args.use_amp)
 
 for batch_size in args.batch_size:
     data_bs = []
@@ -79,7 +79,7 @@ for batch_size in args.batch_size:
             del out
         
         dur_measure = timing_cpu(trace_func, 100, 100, verbose=0)
-        pred, _ = predictor.predict(model, trace_func, use_fp16=use_amp, verbose=args.verbose)
+        pred, _ = predictor.predict(model, trace_func, verbose=args.verbose)
 
         # if args.verbose >= 1:
         #     for t_item, pred_module_dur in zip(trace_with_dur, pred_dur):
