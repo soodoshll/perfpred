@@ -361,13 +361,12 @@ class Predictor(object):
             tot_time = max(tot_time, tot_cpu_time)
             tot_time += gpu_time
             tot_gpu_time += gpu_time
-            # print(first_level_op.name, cpu_time)
 
 
         if verbose >= 1:
             print("Predict:", conv_time, linear_time, pool_time, bn_time, relu_time)
             print("CPU Overhead:", tot_cpu_time)
-        return tot_time, dur_list
+        return tot_time
 
     def predict(self, model, trace_func, verbose=0, dry_run=3):
         # dry run

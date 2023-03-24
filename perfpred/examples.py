@@ -1,4 +1,11 @@
 import torch
+import transformers
+from transformers import (
+    AutoConfig,
+    AutoModelForSequenceClassification,
+    Trainer,
+    TrainingArguments,
+)
 
 def get_cv_example(model_name, batch_size):
     is_inception = model_name == "inception_v3"
@@ -24,3 +31,16 @@ def get_cv_example(model_name, batch_size):
         optim.step()
         torch.cuda.synchronize()
     return fn
+
+def get_transformer_example(model_name, batch_size, seq_len=512):
+    config = AutoConfig.from_pretrained(model_name)
+    model = AutoModelForSequenceClassification.from_config(
+        config=config,
+    )
+    model.config.pad_token_id = model.config.eos_token_id
+
+    model.to(device)
+    model.train()
+
+    optim = torch.optim.SGD(model.parameters(), lr=1e-3)
+    x = torch.zeros((batch_size, seq_len), dtype=torch.int32).cuda()
