@@ -1,27 +1,18 @@
-import sqlite3
-# from timeit import default_timer
-# from unittest import defaultTestLoader
 import torch
 from torch import nn
-from tqdm import trange, tqdm
 import random
 import time
 import numpy as np
 from functools import partial
-# import xgboost as xgb
-# from torchmetrics import MeanAbsolutePercentageError
 import glob, pickle
 import argparse
 import sys
-# from matplotlib import pyplot as plt
 
 LINEAR_PATH = glob.glob("./data/matmul_*.data")
-CONV2D_PATH_SQL = ["./habitat-data/conv2d/conv2d-RTX2080Ti-0.sqlite", "./habitat-data/conv2d/conv2d-RTX2080Ti-1.sqlite"]
-CONV2D_PATH = glob.glob("./data/eco*/conv_*.data") + glob.glob("./data/conv_*.data")
+CONV2D_PATH = glob.glob("./data/conv_*.data")
 MAXPOOL_PATH = glob.glob("./data/maxpool_*.data")
 BATCHNORM_PATH = glob.glob("./data/batchnorm_*.data")
 BMM_PATH = glob.glob("./data/bmm_*.data")
-#BMM_PATH = glob.glob("./data/bmm_t4_fp16_0.data")
 
 
 device = torch.device('cuda')
@@ -46,7 +37,6 @@ def make_mlp(device, input_dim, hidden_layers=[1024] * 8, activation=nn.ReLU):
         layers.append(activation())
         last = h
     layers.append(nn.Linear(last, 1))
-    # layers.append(ExpLayer())
     model = nn.Sequential(*layers)
     model.to(device)    
     return model
@@ -83,29 +73,7 @@ def ExpLoss(output, target, inputs=None):
     loss = torch.abs(torch.exp(output/target) - torch.e)
     return torch.mean(loss)
 
-class Predictor(object):
-    def load_data_sql(self, paths):
-        rows = []
-        for path in paths:
-            conn = sqlite3.connect(path)
-            c = conn.cursor()
-            cursor = c.execute("SELECT * from recordings")
-            rows.extend([row[1:] for row in cursor])
-        self.raw_dataset = torch.tensor(rows)
-        print("datasize:", len(rows))
-        
-        self.avgs = torch.mean(self.raw_dataset, axis=0)
-        self.stds = torch.std(self.raw_dataset, axis=0)
-        self.avgs[-1] = 0
-        self.stds[-1] = 1
-        self.dataset = (self.raw_dataset - self.avgs) / self.stds
-        print("avg:", self.avgs)
-        print("std:", self.stds)  
-
-        train_set_size = int(self.dataset.shape[0] * 0.8)
-        test_set_size = self.dataset.shape[0] - train_set_size
-        self.train_set, self.test_set = torch.utils.data.random_split(self.dataset, [train_set_size, test_set_size])
-
+class NNPredictor(object):
     def train(self, model_path, batch_size=512, num_epoch=30, hooks=[], verbose=1):
         model = self.model
         model.to(self.device)
@@ -118,7 +86,6 @@ class Predictor(object):
                 lr=1e-4, 
                 weight_decay=1e-5
                 )
-        lowest_err = 9e9
         for epoch_idx in range(num_epoch):
             for data in dataloader:
                 inputs = self.preprocess(data[:, :-1]).to(self.device)
@@ -161,35 +128,27 @@ class Predictor(object):
         # out = torch.exp(out)
         return out.detach().numpy()
 
-    def test_set_error(self, batch_size=1000, filename=None):
-        # print(len(self.test_set))
+    def test_set_error(self, batch_size=1000):
         dataloader = torch.utils.data.DataLoader(self.test_set, batch_size=batch_size, shuffle=True) 
         errors = []
-        # print(f"    mem: {torch.cuda.memory_allocated() /1e6} MB")
         with torch.no_grad():
             for data in dataloader:
-                # print(f"    mem: {torch.cuda.memory_allocated() /1e6} MB")
                 inputs = self.preprocess(data[:, :-1]).to(self.device)
                 labels = data[:, -1].to(self.device)
                 out = self.model(inputs)
                 pred = out[:, 0] * self.stds[-1] + self.avgs[-1]
-                # pred = torch.exp(pred)
                 truth = labels * self.stds[-1] + self.avgs[-1]
-                # print(pred[0], truth[0])
                 error = (pred - truth) / truth
                 errors.append(error)
         errors = torch.concat(errors)
         errors = errors.cpu().detach().numpy()
-        # if filename is not None:
-        #     plt.hist(errors, bins=100)
-        #     plt.savefig(filename)
 
         return np.mean(np.abs(errors))
 
     def preprocess(self, data):
         return (data - self.avgs[:-1]) / self.stds[:-1]
 
-class LinearPredictor(Predictor):
+class LinearPredictor(NNPredictor):
     def __init__(self, device=torch.device('cpu')):
         self.feature_name = ['bias', 'batch', 'in_features', 'out_features', 'is_forward', 'use_fp16']
         self.model = make_mlp(device, len(self.feature_name))
@@ -243,8 +202,6 @@ class LinearPredictor(Predictor):
             n = random.randint(16, 256)
             m = random.randint(1, 4096)
             k = random.randint(1, 4096)
-            # n, m, k = 249, 10060, 157
-            # n, m, k = 877, 7129, 8717
 
             A = torch.rand((n, m), device=device, dtype=torch.float32)
             layer = nn.Linear(m, k, device=device)
@@ -252,15 +209,10 @@ class LinearPredictor(Predictor):
             for _ in range(3):
                 layer(A)
             torch.cuda.synchronize()
-            # start = torch.cuda.Event(enable_timing=True)
-            # end = torch.cuda.Event(enable_timing=True)
-            # start.record()
             t0 = time.time()
             for _ in range(10):
                 layer(A)
-            # end.record()
             torch.cuda.synchronize()
-            # dur = (start.elapsed_time(end)) / 10
             dur1 = (time.time() - t0) / 10 * 1e3
             pred = self.predict([0, n, m, k, 1])
             print(dur1, pred)
@@ -268,7 +220,7 @@ class LinearPredictor(Predictor):
                 print(n, m, k, dur1)
                 return 
 
-class BatchMatMulPredict(Predictor):
+class BatchMatMulPredict(NNPredictor):
     def __init__(self, device=torch.device('cpu'), modulo=True):
         self.feature_name = ['batch', 'l', 'm', 'n', 'is_forward', 'use_fp16']
         self.model = make_mlp(device, len(self.feature_name) + 8 * 4)
@@ -358,7 +310,7 @@ def modpos(n, m, zero_base = True):
         return n
     return m if n == 0 else n
 
-class Conv2DPredictor(Predictor):
+class Conv2DPredictor(NNPredictor):
     def __init__(self, modulo=True, device=torch.device('cpu')):
         self.feature_name = ['bias', 'batch', 'image_size', 'in_channels', 'out_channels', 'kernel_size',
         'stride', 'padding', 'is_forward', 'use_fp16']
@@ -508,7 +460,7 @@ class Conv2DPredictor(Predictor):
         pred = self.xgb_r.predict(np.array([input.numpy()]))
         return pred[0]
 
-class MaxPoolingPredictor(Predictor):
+class MaxPoolingPredictor(NNPredictor):
     def __init__(self, device=torch.device('cpu')):
         self.feature_name = ['batch_size', 'kernel_size', 'image_size', 'channels', 'stride', 'is_forward', 'use_fp16']
         self.model = make_mlp(device, len(self.feature_name))
@@ -558,7 +510,7 @@ class MaxPoolingPredictor(Predictor):
         test_set_size = self.dataset.shape[0] - train_set_size
         self.train_set, self.test_set = torch.utils.data.random_split(self.dataset, [train_set_size, test_set_size]) 
 
-class BatchNormPredictor(Predictor):
+class BatchNormPredictor(NNPredictor):
     def __init__(self, device=torch.device('cpu')):
         self.feature_name = ['batch_size', 'image_size', 'channels', 'is_forward', 'use_fp16']
         self.model = make_mlp(device, len(self.feature_name))
@@ -612,13 +564,6 @@ class BatchNormPredictor(Predictor):
         self.train_set, self.test_set = torch.utils.data.random_split(self.dataset, [train_set_size, test_set_size]) 
 
 def train(args):
-    # linear_pred = LinearPredictor()
-    # linear_pred.load_data(LINEAR_PATH)
-    # linear_pred.train('predictor_model_linear.th', 
-    #                 batch_size=512,
-    #                 num_epoch=80, 
-    #                 hooks=[lambda : print("error on test set:", linear_pred.test_set_error())])
-    # return
     modulo = not args.nomodulo
     if args.op == 'conv2d':
         conv_pred = Conv2DPredictor(modulo, device=device)
@@ -667,46 +612,10 @@ def train(args):
                        num_epoch=200)
     else:
         raise RuntimeError("Not supported")
-    # error = conv_pred.test_set_error(filename="conv_error.png")
-
-    # error = conv_pred.train_set_error()
-    # maxpool_pred = MaxPoolingPredictor()
-    # maxpool_pred.load_data(MAXPOOL_PATH)
-    # maxpool_pred.train("predictor_model_maxpool.th",
-    #                     batch_size=512,
-    #                     num_epoch=200,
-    #                     hooks=[lambda : print("error on test set:", maxpool_pred.test_set_error())])
-
-    # batchnorm_pred = BatchNormPredictor(device=device)
-    # batchnorm_pred.load_data(BATCHNORM_PATH)
-    # batchnorm_pred.train("predicator_model_batchnorm.th",
-    #                      batch_size=512,
-    #                      num_epoch=200,
-    #                      hooks=[lambda : print("error on test set:", batchnorm_pred.test_set_error())])
-
-def load_model():
-    linear_pred = LinearPredictor()
-    linear_pred.load_model("./model/predictor_model_linear.th")
-
-    conv_pred = Conv2DPredictor(modulo=modulo)
-    conv_pred.load_model("./model/predictor_model_conv2d.th")
-
-    maxpool_pred = MaxPoolingPredictor() 
-    maxpool_pred.load_model("./model/predictor_model_maxpool.th")
-
-    return linear_pred, conv_pred, maxpool_pred
 
 if __name__ == '__main__':
-    # load_model()
     parser = argparse.ArgumentParser()
     parser.add_argument("op", choices=["conv2d", "mm", "batchnorm", "maxpool2d", "bmm"])
     parser.add_argument("--nomodulo", action='store_true')
     args = parser.parse_args()
     train(args)
-    # conv_pred = Conv2DPredictor()
-    # conv_pred.load_model("predictor_model_conv2d.th")
-    # conv_pred.load_data(CONV2D_PATH)
-    # print(error)
-    # conv_pred.xgb_fit()
-    # conv_pred.train_set_error()
-    # pass

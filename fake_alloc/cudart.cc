@@ -26,12 +26,10 @@ extern "C" {
 // }
 
 __host__ cudaError_t cudaLaunchKernel(const void* func, dim3 gridDim, dim3 blockDim, void **args, size_t sharedMem, cudaStream_t stream) {
-  // printf("you're fucked, launching kernel\n");
   return cudaSuccess;
 }
 
 CUresult cuLaunchKernel ( CUfunction f, unsigned int  gridDimX, unsigned int  gridDimY, unsigned int  gridDimZ, unsigned int  blockDimX, unsigned int  blockDimY, unsigned int  blockDimZ, unsigned int  sharedMemBytes, CUstream hStream, void** kernelParams, void** extra ) {
-  // printf("you're fucked, culaunching kernel\n");
   return CUDA_SUCCESS;
 }
 

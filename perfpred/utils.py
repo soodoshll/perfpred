@@ -38,7 +38,7 @@ def timing_cpu(func, warmup=3, nitr=20, verbose=0):
     torch.cuda.synchronize()
     return (time.time() - start) / nitr * 1e3 
 
-def torch_vision_model_revise():
+def torch_vision_model_revise(module):
     def _basicblock_revised_forward(self, x):
         identity = x
 
@@ -79,14 +79,14 @@ def torch_vision_model_revise():
 
         return out
 
-    torchvision.models.resnet.BasicBlock.forward = _basicblock_revised_forward
-    torchvision.models.resnet.Bottleneck.forward = _bottleneck_revised_forward
+    module.models.resnet.BasicBlock.forward = _basicblock_revised_forward
+    module.models.resnet.Bottleneck.forward = _bottleneck_revised_forward
 
     def _basic_conv2d_revised_forawrd(self, x):
         x = self.conv(x)
         x = self.bn(x)
         return torch.nn.functional.relu(x)
-    torchvision.models.inception.BasicConv2d.forward = _basic_conv2d_revised_forawrd
+    module.models.inception.BasicConv2d.forward = _basic_conv2d_revised_forawrd
 
 def change_inplace_to_false(module):
     if hasattr(module, 'inplace'):
@@ -131,6 +131,8 @@ def remove_initialization():
     for init in initializers:
         exec(f"torch.nn.init.{init} = lambda *args, **kwargs: None")
         exec(f"torch.nn.init.{init}_ = lambda *args, **kwargs: None")
+    
+    exec("torch.Tensor.normal_ = lambda *args, **kwargs: None")
 
 def parse_mem_log(filename, pid):
     max_mem = 0
