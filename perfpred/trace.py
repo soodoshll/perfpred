@@ -8,6 +8,7 @@ import pickle
 from .measure import measure_unary_elementwise
 from .predictor import Conv2DPredictor, LinearPredictor, MaxPoolingPredictor, BatchNormPredictor
 from .utils import _get_first_level_ops
+from .examples import get_cv_example
 
 UNARY_COEFF = 1.50332785e-08 
 UNARY_BIAS = 0
@@ -30,10 +31,6 @@ def measure_simple_op():
 UNARY_COEFF = {
     "2080ti":1.463674020617832e-08
 }
-
-if __name__ == "__main__":
-    print("Measuring Memory Bandwidth...")
-    measure_simple_op()
 
 def profile_model(func, nitr=3, device='cuda'):
     torch.cuda.synchronize(device)
@@ -59,6 +56,11 @@ TRACE_MODULE = (
     nn.BatchNorm2d, 
 )
 
+def _module_wo_param(module):
+    if hasattr(module, 'weight'):
+        module.weight = None
+    return module
+
 class Tracer(object):
     def forward_hook(self, record):
         def fun(module, input, output):
@@ -66,7 +68,7 @@ class Tracer(object):
                 return
             if len(list(module.children())) == 0:
                 record.append(
-                    (1, module, [None if i is None else i.shape for i in input], True)
+                    (1, _module_wo_param(module), [None if i is None else i.shape for i in input], True)
                 )
         return fun
     
@@ -87,7 +89,7 @@ class Tracer(object):
                     dx = False
             if len(list(module.children())) == 0:
                 record.append(
-                    (0, module, [None if i is None else i.shape for i in input], dx)
+                    (0, _module_wo_param(module), [None if i is None else i.shape for i in input], dx)
                 )
         return fun
     
@@ -127,16 +129,8 @@ class Tracer(object):
     op_name_mapping = {
         nn.Conv2d : ('autograd::engine::evaluate_function: ConvolutionBackward0', 'aten::conv2d'),
         nn.MaxPool2d : ('autograd::engine::evaluate_function: MaxPool2DWithIndicesBackward0', 'aten::max_pool2d'),
-        # nn.ReLU : ('autograd::engine::evaluate_function: ReluBackward0', 'aten::relu'),
         nn.Linear : ('autograd::engine::evaluate_function: (MmBackward0)|(AddmmBackward0)', 'aten::linear'),
-        # nn.Flatten : ('autograd::engine::evaluate_function: ReshapeAliasBackward0', 'aten::flatten'),
-        # nn.CrossEntropyLoss : (
-        #     ('autograd::engine::evaluate_function: NllLossBackward0',
-        #      'autograd::engine::evaluate_function: LogSoftmaxBackward0'), 
-        #     'aten::cross_entropy_loss'),
         nn.BatchNorm2d : ('autograd::engine::evaluate_function: CudnnBatchNormBackward0', 'aten::batch_norm'),
-        # nn.AdaptiveAvgPool2d: ('autograd::engine::evaluate_function: MeanBackward1', 'aten::adaptive_avg_pool2d'),
-        # nn.Dropout : ("aten::native_dropout_backward", "aten::dropout")
     }
 
     def match_trace_and_events(self, trace, events, verbose=0):
@@ -201,9 +195,6 @@ class Tracer(object):
         step += 1
         trace_with_dur = []
         dur_counted = 0
-        # for item, dur in zip(new_trace, dur_dict):
-        #     trace_with_dur.append(item + (np.mean(dur), ))
-        #     dur_counted += np.mean(dur)
         conv_time = 0
         linear_time = 0
         pool_time = 0
@@ -375,9 +366,6 @@ class Predictor(object):
 
         if verbose >= 1:
             print("Predict:", conv_time, linear_time, pool_time, bn_time, relu_time)
-        
-        # if idx < len(first_level_ops) - 1:
-            # next_op = 
             print("CPU Overhead:", tot_cpu_time)
         return tot_time, dur_list
 
@@ -392,3 +380,27 @@ class Predictor(object):
         tracer.match_trace_and_events(trace, events, verbose=verbose)
         pred = self.predict_using_trace(trace, events, verbose)
         return pred
+    
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('command', choices=['trace', 'predict'])
+    parser.add_argument('--trace_file', type=str, default="./tmp.th")
+    parser.add_argument('--target', type=str, default="2080ti")
+    parser.add_argument('--model', type=str, default='resnet50')
+    parser.add_argument('--batch_size', type=int, default=1)
+    args = parser.parse_args()
+    if args.command == 'trace':
+        fn = get_cv_example(args.model, args.batch_size)
+        tracer = Tracer()
+        events = profile_model(fn)
+        trace = tracer.trace(fn)
+        tracer.match_trace_and_events(trace, events)
+        torch.save((trace, events), args.trace_file)
+    elif args.command =='predict':
+        trace, events = torch.load(args.trace_file)
+        predictor = Predictor(args.target)
+        pred = predictor.predict_using_trace(trace, events, )
+        print(pred)
+        
+        
