@@ -69,7 +69,7 @@ def main():
     optim = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
     model.train()
-    inputs = torch.ones((args.batch_size, args.seq_len), dtype=torch.int32, device=device)
+    inputs = torch.ones((args.batch_size, args.seq_len), dtype=torch.int64, device=device)
     labels = torch.zeros((args.batch_size, ), dtype=torch.int64, device=device)
     dataset = Dataset.from_dict({'input_ids':inputs, 'labels':labels})
     # scaler = GradScaler(enabled=args.amp)

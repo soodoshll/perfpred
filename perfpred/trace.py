@@ -6,9 +6,9 @@ import re
 import pickle
 
 from .measure import measure_unary_elementwise
-from .predictor import Conv2DPredictor, LinearPredictor, MaxPoolingPredictor, BatchNormPredictor
+from .predictor import Conv2DPredictor, LinearPredictor, MaxPoolingPredictor, BatchNormPredictor, BatchMatMulPredict
 from .utils import _get_first_level_ops
-from .examples import get_cv_example
+from .examples import get_example
 
 UNARY_COEFF = 1.50332785e-08 
 UNARY_BIAS = 0
@@ -47,6 +47,7 @@ def profile_model(func, nitr=3, device='cuda'):
             func()
             profiler.step()
         torch.cuda.synchronize(device)
+    profiler.export_chrome_trace("temp.json")
     return profiler.profiler.function_events
 
 TRACE_MODULE = (
@@ -96,7 +97,7 @@ class Tracer(object):
     def trace(self, func):
         record = []
         forward_handle = nn.modules.module.register_module_forward_hook(self.forward_hook(record))
-        backward_handle = nn.modules.module.register_module_full_backward_hook(self.backward_hook(record))
+        backward_handle = nn.modules.module.register_module_backward_hook(self.backward_hook(record))
         func()
         forward_handle.remove()
         backward_handle.remove()
@@ -143,7 +144,9 @@ class Tracer(object):
         for idx, event in enumerate(events):
             if event.name.startswith('ProfilerStep'):
                 break
+        
     
+        # print(trace)
         step_kernel_time = 0
         marked_kernel = set()
         step_time.append(event.cpu_time_total)
@@ -201,25 +204,6 @@ class Tracer(object):
         bn_time = 0
         relu_time = 0
 
-        # for debugging
-        for is_forward, module, _, _, dur in trace_with_dur:
-            if isinstance(module, nn.Conv2d):
-                conv_time += dur
-            if isinstance(module, nn.Linear):
-                linear_time += dur
-            if isinstance(module, nn.MaxPool2d):
-                pool_time += dur
-            if isinstance(module, nn.BatchNorm2d):
-                bn_time += dur
-            if isinstance(module, nn.ReLU):
-                relu_time += dur
-
-        acc_grad = np.sum(np.mean(acc_grad, axis=1))
-        optim_dur = np.mean(optim_dur)
-
-        if verbose >= 1:
-            print("Tracing:", conv_time/1e3, linear_time/1e3, pool_time/1e3, bn_time/1e3, relu_time/1e3, acc_grad/1e3 + optim_dur/1e3)
-
 def _first_step(events):
     for event in events:
         if event.name.startswith('ProfilerStep'):
@@ -262,6 +246,9 @@ class Predictor(object):
 
         self.batchnorm_pred = BatchNormPredictor()
         self.batchnorm_pred.load_model(f"./model/{target}/predictor_model_batchnorm.th")
+        
+        self.bmm_pred = BatchMatMulPredict()
+        self.bmm_pred.load_model(f"./model/{target}/predictor_model_bmm.th")
 
     def _mark(self, visited, event):
         visited.add(event)
@@ -285,12 +272,19 @@ class Predictor(object):
         tot_gpu_time = 0
         tot_cpu_time = 0
         for idx, first_level_op in enumerate(first_level_ops):
-            # print(first_level_op.name)
             if first_level_op.name.startswith("ProfilerStep"):
                 continue
             gpu_time = 0
             for event in Tracer._get_all_children(children, first_level_op):
-
+                bmm = None
+                if event.name == 'aten::matmul':
+                    for child in event.cpu_children:
+                        if child.name == "aten::bmm":
+                            is_forward = True
+                            bmm = child
+                if event.name == "BmmBackward0":
+                    bmm = event
+                    is_forward = False
                 # GPU time
                 if hasattr(event, 'module'):
                     module = event.module
@@ -349,6 +343,24 @@ class Predictor(object):
                         )
                         bn_time += pred
                         gpu_time += pred
+                elif bmm is not None:
+                    if is_forward:
+                        shape = bmm.input_shapes
+                        pred = self.bmm_pred.predict(
+                            [shape[0][0], shape[0][1], shape[0][2], shape[1][2], 1, use_fp16]
+                        )
+                    else:
+                        # print(bmm.cpu_children[1], bmm.cpu_children[3])
+                        shape = bmm.cpu_children[1].input_shapes
+                        pred = self.bmm_pred.predict(
+                            [shape[0][0], shape[0][1], shape[0][2], shape[1][2], 1, use_fp16]
+                        )
+                        shape = bmm.cpu_children[3].input_shapes
+                        pred += self.bmm_pred.predict(
+                            [shape[0][0], shape[0][1], shape[0][2], shape[1][2], 1, use_fp16]
+                        )
+                    gpu_time += pred
+                    self._mark(visited, event)
                 elif not event in visited:
                     if len(event.kernels) > 0 and len(event.input_shapes) > 0:
                         input_size = sum([np.prod(s) for s in event.input_shapes])
@@ -390,7 +402,7 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=1)
     args = parser.parse_args()
     if args.command == 'trace':
-        fn = get_cv_example(args.model, args.batch_size)
+        fn = get_example(args.model, args.batch_size)
         tracer = Tracer()
         events = profile_model(fn)
         trace = tracer.trace(fn)
