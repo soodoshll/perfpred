@@ -75,20 +75,24 @@ class Tracer(object):
     
     def backward_hook(self, record):
         def fun(module, input, output):
+            # print("TRACE BACKWARD", module)
             if not type(module) in TRACE_MODULE:
                 return
             dx = True
-            has_grad = False
-            for grad_output in output:
-                if not torch.all(grad_output == 0):
-                    has_grad = True
-                    break
-            if not has_grad:
-                return
+            # has_grad = False
+
+            # for grad_output in output:
+            #     if not torch.all(grad_output == 0):
+            #         has_grad = True
+            #         break
+            
+            # if not has_grad:
+                # return
             if isinstance(module, nn.Conv2d):
                 if input[0] is None:
                     dx = False
             if len(list(module.children())) == 0:
+                # print("ADD BACKWARD")
                 record.append(
                     (0, _module_wo_param(module), [None if i is None else i.shape for i in input], dx)
                 )
@@ -144,7 +148,6 @@ class Tracer(object):
         for idx, event in enumerate(events):
             if event.name.startswith('ProfilerStep'):
                 break
-        
     
         # print(trace)
         step_kernel_time = 0
@@ -153,34 +156,28 @@ class Tracer(object):
         children = self._get_all_children(events, event)
         ptr = 0
         acc_grad_ptr = 0
-        matching_names = None
+        matching_name = None
         optim_t = 0
-
-        tuple_ptr = 0
         
         for c in children:
-            step_kernel_time += sum([k.duration for k in c.kernels])
-            if ptr < len(trace):
+            while matching_name is None and ptr < len(trace):
                 module = trace[ptr][1]
                 is_forward = trace[ptr][0]
-                while matching_names is None and ptr < len(trace):
-                    for t, names in self.op_name_mapping.items():
-                        if isinstance(module, t):
-                            matching_names = names[is_forward]
-                    assert matching_names is not None, module
-                is_tuple = isinstance(matching_names, tuple)
-                matching_name = matching_names[tuple_ptr] if is_tuple else matching_names
-                if re.match(matching_name, c.name) is not None:
-                    kernel_time = self._get_children_kernel_time(c, marked_kernel)
-                    setattr(c, "module", module)
-                    setattr(c, "is_forward", is_forward)
-                    setattr(c, "input_shapes", trace[ptr][2])
-                    if (is_tuple): 
-                        tuple_ptr += 1
-                    if (not is_tuple or tuple_ptr == len(matching_names)):
-                        ptr += 1
-                        tuple_ptr = 0
-                        matching_names = None
+                if isinstance(module, tuple(self.op_name_mapping.keys())):
+                    matching_name = self.op_name_mapping[type(module)][is_forward]
+                    # print("MATCHING:", matching_name)
+                else:
+                    ptr += 1
+            if ptr == len(trace):
+                break
+            step_kernel_time += sum([k.duration for k in c.kernels])
+            if re.match(matching_name, c.name) is not None:
+                kernel_time = self._get_children_kernel_time(c, marked_kernel)
+                setattr(c, "module", module)
+                setattr(c, "is_forward", is_forward)
+                setattr(c, "input_shapes", trace[ptr][2])
+                ptr += 1
+                matching_name = None
 
             if c.name.startswith('Optimizer.step'):
                 optim_t += self._get_children_kernel_time(c, marked_kernel)
@@ -191,6 +188,8 @@ class Tracer(object):
                 else:
                     acc_grad[acc_grad_ptr].append(kernel_time)
                     acc_grad_ptr += 1
+        
+        assert ptr == len(trace), matching_name + " not found"
         
         all_kernel_time.append(step_kernel_time)
 
@@ -269,110 +268,142 @@ class Predictor(object):
         root = _first_step(events)
         children = Tracer._get_all_children(events, root)
         first_level_ops = _get_first_level_ops(children, root)
+        first_step = first_level_ops[0]
         tot_gpu_time = 0
         tot_cpu_time = 0
-        for idx, first_level_op in enumerate(first_level_ops):
-            if first_level_op.name.startswith("ProfilerStep"):
-                continue
-            gpu_time = 0
-            for event in Tracer._get_all_children(children, first_level_op):
-                bmm = None
-                if event.name == 'aten::matmul':
-                    for child in event.cpu_children:
-                        if child.name == "aten::bmm":
-                            is_forward = True
-                            bmm = child
-                if event.name == "BmmBackward0":
-                    bmm = event
-                    is_forward = False
-                # GPU time
-                if hasattr(event, 'module'):
-                    module = event.module
-                    is_forward = event.is_forward
-                    input_shapes = event.input_shapes
-                    self._mark(visited, event)
+        #for idx, first_level_op in enumerate(first_level_ops):
+            #if first_level_op.name.startswith("ProfilerStep"):
+            #    continue
 
-                    if isinstance(module, nn.Conv2d):
-                        input_shape = input_shapes[0]
-                        if input_shape == None:
-                            # the `input` of backward operators are actually the `output`
-                            # so we need to find its corresponding forward operator to
-                            # find the original input size.
-                            for f, m, shape, _ in trace:
-                                if m == module and f:
-                                    input_shape = shape[0]
-                        pred = self.conv_pred.predict(
-                            [0, 
-                            input_shape[0], 
-                            input_shape[2], 
-                            input_shape[1], 
-                            module.out_channels, 
-                            module.kernel_size[0], 
-                            module.stride[0], 
-                            module.padding[0], 
-                            is_forward,
-                            use_fp16]
-                        ) 
+        gpu_time = 0
+        for event in children:
+            bmm = None
+            pred = None
+            # # if event.name.startswith("autograd"):
+            #     print("*", event.name, hasattr(event, 'module'))
+            if event.name in ('aten::matmul', 'aten::addmm'):
+                for child in event.cpu_children:
+                    if child.name == "aten::bmm":
+                        is_forward = True
+                        bmm = child
+            if event.name == "BmmBackward0":
+                bmm = event
+                is_forward = False
+            # GPU time
+            if hasattr(event, 'module'):
+                module = event.module
+                is_forward = event.is_forward
+                input_shapes = event.input_shapes
+                self._mark(visited, event)
 
-                        # Not sure
-                        # if module.bias is not None:
-                        #     bias_pred = self.UNARY_COEFF * (input_shape[0] * ((input_shape[2] / module.stride[0]) ** 2) * module.out_channels)
-                        #     if use_fp16:
-                        #         bias_pred /= 2
-                        #     pred += bias_pred
-                        conv_time += pred
-                        gpu_time += pred
-                    if isinstance(module, nn.Linear):
-                        input_shape = input_shapes[0]
-                        pred = self.linear_pred.predict(
-                            [module.bias is not None, input_shape[0], input_shape[1], module.out_features, is_forward, use_fp16]
-                        )
-                        linear_time += pred
-                        gpu_time += pred
-                    if isinstance(module, nn.MaxPool2d):
-                        input_shape = event.cpu_children[0].input_shapes[0]
-                        pred = self.maxpool_pred.predict(
-                            [input_shape[0], module.kernel_size, input_shape[2], input_shape[1], module.stride, is_forward, use_fp16]
-                        )
-                        pool_time += pred
-                        gpu_time += pred
-                    if isinstance(module, nn.BatchNorm2d):
-                        input_shape = event.cpu_children[0].input_shapes[0]
-                        pred = self.batchnorm_pred.predict(
-                            [input_shape[0], input_shape[2], input_shape[1], is_forward, use_fp16]
-                        )
-                        bn_time += pred
-                        gpu_time += pred
-                elif bmm is not None:
-                    if is_forward:
-                        shape = bmm.input_shapes
-                        pred = self.bmm_pred.predict(
-                            [shape[0][0], shape[0][1], shape[0][2], shape[1][2], 1, use_fp16]
-                        )
-                    else:
-                        # print(bmm.cpu_children[1], bmm.cpu_children[3])
-                        shape = bmm.cpu_children[1].input_shapes
-                        pred = self.bmm_pred.predict(
-                            [shape[0][0], shape[0][1], shape[0][2], shape[1][2], 1, use_fp16]
-                        )
-                        shape = bmm.cpu_children[3].input_shapes
-                        pred += self.bmm_pred.predict(
-                            [shape[0][0], shape[0][1], shape[0][2], shape[1][2], 1, use_fp16]
-                        )
+                if isinstance(module, nn.Conv2d):
+                    input_shape = input_shapes[0]
+                    if input_shape == None:
+                        # the `input` of backward operators are actually the `output`
+                        # so we need to find its corresponding forward operator to
+                        # find the original input size.
+                        for f, m, shape, _ in trace:
+                            if m == module and f:
+                                input_shape = shape[0]
+                    pred = self.conv_pred.predict(
+                        [0, 
+                        input_shape[0], 
+                        input_shape[2], 
+                        input_shape[1], 
+                        module.out_channels, 
+                        module.kernel_size[0], 
+                        module.stride[0], 
+                        module.padding[0], 
+                        is_forward,
+                        use_fp16]
+                    ) 
+
+                    # Not sure
+                    # if module.bias is not None:
+                    #     bias_pred = self.UNARY_COEFF * (input_shape[0] * ((input_shape[2] / module.stride[0]) ** 2) * module.out_channels)
+                    #     if use_fp16:
+                    #         bias_pred /= 2
+                    #     pred += bias_pred
+                    conv_time += pred
                     gpu_time += pred
+                if isinstance(module, nn.Linear):
+                    input_shape = input_shapes[0]
+                    if len(input_shape) == 1:
+                        input_shape = [1, input_shape[0]]
+                    # print(input_shape)
+                    pred = self.linear_pred.predict(
+                        [module.bias is not None, input_shape[0], input_shape[1], module.out_features, is_forward, use_fp16]
+                    )
+                    linear_time += pred
+                    gpu_time += pred
+                if isinstance(module, nn.MaxPool2d):
+                    input_shape = event.cpu_children[0].input_shapes[0]
+                    pred = self.maxpool_pred.predict(
+                        [input_shape[0], module.kernel_size, input_shape[2], input_shape[1], module.stride, is_forward, use_fp16]
+                    )
+                    pool_time += pred
+                    gpu_time += pred
+                if isinstance(module, nn.BatchNorm2d):
+                    input_shape = event.cpu_children[0].input_shapes[0]
+                    pred = self.batchnorm_pred.predict(
+                        [input_shape[0], input_shape[2], input_shape[1], is_forward, use_fp16]
+                    )
+                    bn_time += pred
+                    gpu_time += pred
+            elif bmm is not None:
+                if is_forward:
+                    shape = bmm.input_shapes
+                    pred = self.bmm_pred.predict(
+                        [shape[0][0], shape[0][1], shape[0][2], shape[1][2], 1, use_fp16]
+                    )
+                else:
+                    # print(bmm.cpu_children[1], bmm.cpu_children[3])
+                    shape = bmm.cpu_children[1].input_shapes
+                    pred = self.bmm_pred.predict(
+                        [shape[0][0], shape[0][1], shape[0][2], shape[1][2], 1, use_fp16]
+                    )
+                    shape = bmm.cpu_children[3].input_shapes
+                    pred += self.bmm_pred.predict(
+                        [shape[0][0], shape[0][1], shape[0][2], shape[1][2], 1, use_fp16]
+                    )
+                gpu_time += pred
+                self._mark(visited, event)
+            elif not event in visited:
+                if event.name == 'aten::addmm':
+                    input_shapes = event.input_shapes
+                    n = input_shapes[1][0]
+                    m = input_shapes[1][1]
+                    k = input_shapes[2][1]
+                    pred = self.linear_pred.predict(
+                        [True, n, m, k, 1, use_fp16]
+                    )
+                    gpu_time += pred
+                elif event.name == 'AddmmBackward0':
+                    input_shapes = event.cpu_children[1].input_shapes
+                    n = input_shapes[0][0]
+                    m = input_shapes[1][1]
+                    k = input_shapes[0][1]
+                    pred = self.linear_pred.predict(
+                        [True, n, m, k, 0, use_fp16]
+                    )
+                    gpu_time += pred                    
                     self._mark(visited, event)
-                elif not event in visited:
-                    if len(event.kernels) > 0 and len(event.input_shapes) > 0:
-                        input_size = sum([np.prod(s) for s in event.input_shapes])
-                        pred = input_size * self.UNARY_COEFF
-                        gpu_time += pred
-        
-            # CPU time
-            cpu_time = self.cpu_predictor.predict(first_level_op)
-            tot_cpu_time += cpu_time
-            tot_time = max(tot_time, tot_cpu_time)
-            tot_time += gpu_time
-            tot_gpu_time += gpu_time
+                # elif event.name == 'aten::mm':
+                    # print(event)
+                elif len(event.kernels) > 0 and len(event.input_shapes) > 0:
+                    input_size = sum([np.prod(s) for s in event.input_shapes])
+                    pred = input_size * self.UNARY_COEFF
+                    gpu_time += pred
+            if pred is not None:
+                print(event.name, pred, hasattr(event, 'module'))
+    
+        # CPU time
+        # cpu_time = self.cpu_predictor.predict(first_level_op)
+        cpu_time = 0
+        tot_cpu_time += cpu_time
+        # tot_time = max(tot_time, tot_cpu_time)
+        tot_time += gpu_time
+        tot_gpu_time += gpu_time
 
 
         if verbose >= 1:
