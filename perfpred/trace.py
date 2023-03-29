@@ -395,7 +395,7 @@ class Predictor(object):
                     pred = input_size * self.UNARY_COEFF
                     gpu_time += pred
             if pred is not None:
-                print(event.name, pred, hasattr(event, 'module'))
+                print(event.name, pred, event.cuda_time_total/1e3, hasattr(event, 'module'))
     
         # CPU time
         # cpu_time = self.cpu_predictor.predict(first_level_op)
