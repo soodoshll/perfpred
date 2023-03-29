@@ -317,20 +317,23 @@ class Predictor(object):
                         is_forward,
                         use_fp16]
                     ) 
+                    print(input_shape[0], 
+                        input_shape[2], 
+                        input_shape[1], 
+                        module.out_channels, 
+                        module.kernel_size[0], 
+                        module.stride[0], 
+                        module.padding[0], 
+                        is_forward,
+                        use_fp16)
 
                     # Not sure
-                    # if module.bias is not None:
-                    #     bias_pred = self.UNARY_COEFF * (input_shape[0] * ((input_shape[2] / module.stride[0]) ** 2) * module.out_channels)
-                    #     if use_fp16:
-                    #         bias_pred /= 2
-                    #     pred += bias_pred
                     conv_time += pred
                     gpu_time += pred
                 if isinstance(module, nn.Linear):
                     input_shape = input_shapes[0]
                     if len(input_shape) == 1:
                         input_shape = [1, input_shape[0]]
-                    # print(input_shape)
                     pred = self.linear_pred.predict(
                         [module.bias is not None, input_shape[0], input_shape[1], module.out_features, is_forward, use_fp16]
                     )

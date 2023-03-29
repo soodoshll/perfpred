@@ -435,7 +435,6 @@ class Conv2DPredictor(NNPredictor):
             kernel_one_hot.type(torch.float32),
             stride_one_hot.type(torch.float32)
             ), axis=-1)
-        # print(inputs.shape)
         return inputs
 
     def train_set_error(self, batch_size=1000):
