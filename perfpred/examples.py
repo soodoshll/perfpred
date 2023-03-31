@@ -2,7 +2,7 @@ import torch
 import torchvision
 
 def get_cv_example(model_name, batch_size):
-    print(model_name, batch_size)
+    print(model_name, batch_size, torch.backends.cudnn.benchmark)
     is_inception = model_name == "inception_v3"
     image_size = 299 if is_inception else 224
     from .utils import torch_vision_model_revise, change_inplace_to_false

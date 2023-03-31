@@ -92,7 +92,6 @@ class Tracer(object):
                 if input[0] is None:
                     dx = False
             if len(list(module.children())) == 0:
-                # print("ADD BACKWARD")
                 record.append(
                     (0, _module_wo_param(module), [None if i is None else i.shape for i in input], dx)
                 )

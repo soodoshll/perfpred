@@ -16,7 +16,7 @@ import os
 import multiprocessing as mp
 from multiprocessing import Process
 
-torch.set_grad_enabled(True)
+# torch.set_grad_enabled(True)
 torch.backends.cudnn.benchmark = True
 
 def measure_binary_elementwise(n, device=torch.device('cuda'), op=torch.add, dry_run=10, nitr=20):
