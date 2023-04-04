@@ -9,7 +9,7 @@ import argparse
 import sys
 
 LINEAR_PATH = glob.glob("./data/matmul_*.data")
-CONV2D_PATH = glob.glob("./data/conv_*.data")
+CONV2D_PATH = glob.glob("./data/conv_2080ti_*.data") + glob.glob("./data/eco-13/*.data") + glob.glob("./data/eco-18/*.data")
 MAXPOOL_PATH = glob.glob("./data/maxpool_*.data")
 BATCHNORM_PATH = glob.glob("./data/batchnorm_*.data")
 BMM_PATH = glob.glob("./data/bmm_*.data")

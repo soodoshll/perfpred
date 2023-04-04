@@ -2,10 +2,9 @@ from inspect import ArgSpec
 import torch
 from torch import nn 
 import time
-# from apex import amp 
 import pickle
 import torchvision
-from perfpred.predictor import load_model, Conv2DPredictor
+from perfpred.predictor import Conv2DPredictor
 from torch.profiler import profile, record_function, ProfilerActivity
 import numpy as np
 import random
@@ -18,7 +17,6 @@ parser.add_argument("--use_fp16", action="store_true")
 args = parser.parse_args()
 
 torch.backends.cudnn.benchmark = True
-# linear_pred, conv_pred, maxpool_pred = load_model()
 from perfpred.utils import timing
 
 device = torch.device('cuda')
@@ -36,8 +34,8 @@ def load_data(filenames):
     return rows
 
 data = load_data([args.filename])
-warm_up = 1
-nitr = 3
+warm_up = 100
+nitr = 100
 
 n = 20
 
@@ -48,7 +46,7 @@ dtype = torch.float16 if args.use_fp16 else torch.float32
 
 for i in range(n):
     idx = random.randint(0, len(data)-1)
-    while data[idx][5] != 7 :
+    while data[idx][5] != 7  or data[idx][8] == 1 or data[idx][0] > 2:
         idx = random.randint(0, len(data)-1)
     d = data[idx]
     dur_fw, dur_bw, _, use_fp16, batch_size, kernel_size, image_size, in_channels, out_channels, stride, padding = d
@@ -68,15 +66,10 @@ for i in range(n):
     def foo():
         torch.cuda.synchronize()
         optim.zero_grad(set_to_none=True)
-        with torch.autocast(device_type='cuda', dtype=dtype):
-            out = model(x)
-            loss = out.sum()
-            loss.backward()
-        # scaler.scale(loss).backward()
-        # scaler.step(optim)
-        # scaler.update()
-        # with amp.scale_loss(loss, optim, delay_overflow_check=True) as scaled_loss:
-            # scaled_loss.backward()
+        # with torch.autocast(device_type='cuda', dtype=dtype):
+        out = model(x)
+        loss = out.sum()
+        loss.backward()
         optim.step()
         torch.cuda.synchronize()
     for _ in range(warm_up):
@@ -84,9 +77,7 @@ for i in range(n):
     with profile(activities=[
         ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, on_trace_ready=analyze) as prof:
         with torch.autocast(device_type='cuda', dtype=dtype):
-        # dur = timing(lambda: model(x), nitr)
-            dur_tc = timing(foo, warm_up, nitr)
-    # print(batch_size, dur, dur_tc)
+            dur_tc = timing(foo, 0, nitr)
     truth_fw = np.mean(fw_measure) 
     truth_bw = np.mean(bw_measure)
     err_fw = (truth_fw - dur_fw) / truth_fw

@@ -29,7 +29,8 @@ def measure_simple_op():
     print(UNARY_COEFF, BINARY_COEFF)
 
 UNARY_COEFF = {
-    "2080ti":1.463674020617832e-08
+    "2080ti": 1.463674020617832e-08,
+    "3090": 9.362995953549202e-09
 }
 
 def profile_model(func, nitr=3, device='cuda'):
@@ -37,13 +38,13 @@ def profile_model(func, nitr=3, device='cuda'):
     with torch.profiler.profile(
         schedule= torch.profiler.schedule(
             wait=1,
-            warmup=5,
+            warmup=20,
             active=nitr,
             repeat=1),
         activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
         record_shapes=True,
     ) as profiler:
-        for _ in range(nitr + 7):
+        for _ in range(nitr + 22):
             func()
             profiler.step()
         torch.cuda.synchronize(device)
