@@ -4,20 +4,20 @@ from torch import nn
 from perfpred.utils import timing, get_clock, timing_cpu
 torch.backends.cudnn.benchmark = False
 
-device = torch.device('cuda')
+device = torch.device('cuda:0')
 
-image_size = 112
-in_channels = 64
+image_size = 224
+in_channels = 3
 out_channels = 64
-kernel_size = 3
-stride = 1
-padding = 1
+kernel_size = 7
+stride = 2
+padding = 3
 nitr = 200
 warm_up = 200
 batch_size = 32
 
 conv_pred = Conv2DPredictor()
-conv_pred.load_model("./model/2080ti/predictor_model_conv2d.th")
+conv_pred.load_model("./model/3090/predictor_model_conv2d.th")
 
 for batch_size in range(1, 65):
     x = torch.empty((batch_size, in_channels, image_size, image_size), device=device, dtype=torch.float32)
@@ -28,5 +28,5 @@ for batch_size in range(1, 65):
         out = model(x)
         torch.cuda.synchronize()
 
-    dur_tc = timing_cpu(foo, warm_up, nitr)
+    dur_tc = timing(foo, warm_up, nitr)
     print(f"{batch_size}, {dur_tc}, {pred}")
