@@ -19,7 +19,7 @@ batch_size = 32
 conv_pred = Conv2DPredictor()
 conv_pred.load_model("./model/2080ti/predictor_model_conv2d.th")
 
-for batch_size in [32]:
+for batch_size in range(1, 65):
     x = torch.empty((batch_size, in_channels, image_size, image_size), device=device, dtype=torch.float32)
     model = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False, device=device)
     pred = conv_pred.predict([0, batch_size, image_size, in_channels, out_channels, kernel_size, stride, padding, 1, 0])
