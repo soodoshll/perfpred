@@ -2,7 +2,7 @@ import torch
 from perfpred.predictor import Conv2DPredictor
 from torch import nn
 from perfpred.utils import timing, get_clock, timing_cpu
-torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.benchmark = True
 
 device = torch.device('cuda:0')
 
