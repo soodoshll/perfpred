@@ -322,16 +322,8 @@ class Conv2DPredictor(NNPredictor):
         else:
             self.model = make_mlp(device, len(self.feature_name))
 
-        # self.xgb_r = xgb.XGBRegressor(objective ='reg:squarederror',
-                #   n_estimators = 200, seed = 123)
 
     def shrink_training_set(self, n):
-        # idx = torch.randperm(len(self.original_train_set))
-        # idx = idx[:n].numpy()
-        # print(idx.shape, type(idx[0]))
-        # print(self.original_train_set[idx[0]])
-        # print(type(self.original_train_set))
-        # self.train_set = [self.original_train_set[i] for i in idx]
         self.train_set = self.original_train_set[:n]
 
     def load_data(self, filenames):

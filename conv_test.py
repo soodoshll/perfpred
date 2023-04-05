@@ -4,7 +4,7 @@ from torch import nn
 from perfpred.utils import timing, get_clock, timing_cpu
 torch.backends.cudnn.benchmark = False
 
-device = torch.device('cuda')
+device = torch.device('cuda:1')
 
 image_size = 112
 in_channels = 64
@@ -28,5 +28,5 @@ for batch_size in range(1, 65):
         out = model(x)
         torch.cuda.synchronize()
 
-    dur_tc = timing_cpu(foo, warm_up, nitr)
+    dur_tc = timing(foo, warm_up, nitr)
     print(f"{batch_size}, {dur_tc}, {pred}")

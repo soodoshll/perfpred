@@ -8,12 +8,12 @@ torch.backends.cudnn.benchmark = True
 
 device = torch.device('cuda')
 
-image_size = 224
+image_size = 112
 in_channels = 64
 out_channels = 64
-kernel_size = 5
+kernel_size = 3
 stride = 1
-padding = 0
+padding = 1
 nitr = 200
 warm_up = 200
 batch_size = 32
